@@ -181,10 +181,13 @@ def _build_catalog(example_cfg: dict, user_cfg: dict) -> list:
 
     current_category = "Autres"
     for name, val in example_disabled.items():
+        if name.startswith("_comment"):
+            current_category = val.strip("- ").strip()
+            continue
         if name.startswith("_"):
             continue
         if name not in all_known:
-            all_known[name] = {"url": val, "category": "Autres"}
+            all_known[name] = {"url": val, "category": current_category}
 
     # User custom sources not in example
     for name, val in _real_sources(user_sources).items():
