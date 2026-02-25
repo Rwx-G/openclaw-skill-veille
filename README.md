@@ -84,7 +84,7 @@ Config file: `~/.openclaw/config/veille/config.json`
 ## File structure
 
 ```
-~/dev/openclaw-skill-veille/
+openclaw-skill-veille/
   SKILL.md                   # OpenClaw skill descriptor
   README.md                  # This file
   config.example.json        # Example config with default sources

@@ -56,11 +56,11 @@ python3 veille.py fetch --hours 24 2>&1 | grep WARN
 
 **Fix:** Always run `veille.py` with its full path, or from the `scripts/` directory:
 ```bash
-cd ~/dev/openclaw-skill-veille/scripts
+cd scripts
 python3 veille.py fetch
 
 # OR with full path (works from anywhere):
-python3 ~/dev/openclaw-skill-veille/scripts/veille.py fetch
+python3 scripts/veille.py fetch
 ```
 
 ---
@@ -71,7 +71,7 @@ python3 ~/dev/openclaw-skill-veille/scripts/veille.py fetch
 
 **Fix:** Run setup first:
 ```bash
-python3 ~/dev/openclaw-skill-veille/scripts/setup.py
+python3 scripts/setup.py
 ```
 
 ---
@@ -160,7 +160,7 @@ for a in articles:
 
 **Test topic similarity between two titles:**
 ```bash
-cd ~/dev/openclaw-skill-veille/scripts
+cd scripts
 python3 topic_filter.py --test "Fortinet RCE vulnerability CVE-2024-1234" "Critical flaw in Fortinet CVE-2024-1234 allows remote code execution"
 ```
 
