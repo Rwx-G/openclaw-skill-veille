@@ -672,6 +672,29 @@ def run_manage_outputs():
 # ---- Main -------------------------------------------------------------------
 
 
+def cleanup():
+    """Remove all persistent files written by this skill (config + data)."""
+    print("Removing veille skill persistent files...")
+    removed = []
+    for path in [CONFIG_FILE,
+                 _DATA_DIR / "seen_urls.json",
+                 _DATA_DIR / "topic_seen.json"]:
+        if path.exists():
+            path.unlink()
+            removed.append(str(path))
+    for d in [_DATA_DIR, _CONFIG_DIR]:
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+    if removed:
+        for p in removed:
+            print(f"  Removed: {p}")
+        print("Done. Re-run setup.py to reconfigure.")
+    else:
+        print("  Nothing to remove.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="OpenClaw veille - setup wizard")
     parser.add_argument("--manage-sources", action="store_true",
@@ -682,9 +705,13 @@ def main():
                         help="Configure le cron job quotidien (ecrit cron.json)")
     parser.add_argument("--non-interactive", action="store_true",
                         help="Utilise les valeurs par defaut sans prompts")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Remove all persistent files (config + data)")
     args = parser.parse_args()
 
-    if args.manage_sources:
+    if args.cleanup:
+        cleanup()
+    elif args.manage_sources:
         run_manage_sources()
     elif args.manage_outputs:
         run_manage_outputs()

@@ -127,8 +127,7 @@ Credentials are only used if you enable the corresponding output. None are requi
 ### Cleanup on uninstall
 
 ```bash
-rm -rf ~/.openclaw/config/veille
-rm -rf ~/.openclaw/data/veille
+python3 scripts/setup.py --cleanup
 ```
 
 ---
