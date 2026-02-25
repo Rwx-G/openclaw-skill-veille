@@ -7,8 +7,7 @@ metadata:
   {
     "openclaw": {
       "emoji": "📰",
-      "requires": { "env": [] },
-      "primaryEnv": ""
+      "requires": { "env": [] }
     }
   }
 ontology:
@@ -42,13 +41,13 @@ No external dependencies: stdlib Python only (urllib, xml.etree, email.utils).
 
 ```bash
 # 1. Setup
-python3 ~/dev/openclaw-skill-veille/scripts/setup.py
+python3 scripts/setup.py
 
 # 2. Validate
-python3 ~/dev/openclaw-skill-veille/scripts/init.py
+python3 scripts/init.py
 
 # 3. Fetch
-python3 ~/dev/openclaw-skill-veille/scripts/veille.py fetch --hours 24 --filter-seen --filter-topic
+python3 scripts/veille.py fetch --hours 24 --filter-seen --filter-topic
 ```
 
 ---
@@ -64,10 +63,7 @@ python3 ~/dev/openclaw-skill-veille/scripts/veille.py fetch --hours 24 --filter-
 ### Installation
 
 ```bash
-# Clone or copy the skill directory
-cd ~/dev/openclaw-skill-veille
-
-# Run setup wizard
+# From the skill directory
 python3 scripts/setup.py
 
 # Validate
@@ -178,7 +174,7 @@ Prints the active configuration (no secrets).
 
 ```python
 # In agent tool call:
-result = exec("python3 ~/dev/openclaw-skill-veille/scripts/veille.py fetch --hours 24 --filter-seen --filter-topic")
+result = exec("python3 scripts/veille.py fetch --hours 24 --filter-seen --filter-topic")
 data = json.loads(result.stdout)
 # data["wrapped_listing"] is ready for LLM prompt injection
 # data["count"] = number of new articles
