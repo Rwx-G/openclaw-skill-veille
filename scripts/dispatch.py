@@ -195,95 +195,156 @@ def format_digest_markdown(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.ut
     return "\n".join(lines)
 
 
+_CATEGORY_COLORS = ["#ef4444", "#f97316", "#3b82f6", "#8b5cf6", "#10b981", "#06b6d4"]
+
+JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+MOIS_FR  = ["janvier", "fevrier", "mars", "avril", "mai", "juin",
+             "juillet", "aout", "septembre", "octobre", "novembre", "decembre"]
+
+
+def _date_fr(dt=None) -> str:
+    d = dt or datetime.now()
+    return f"{JOURS_FR[d.weekday()]} {d.day} {MOIS_FR[d.month - 1]} {d.year}"
+
+
+def _article_rows(articles: list, accent: str) -> str:
+    rows = ""
+    for a in articles:
+        source  = html.escape(str(a.get("source", "")))
+        pub     = html.escape(str(a.get("published", "")))
+        title   = html.escape(str(a.get("title", "(sans titre)")))
+        url     = html.escape(str(a.get("url", "#")), quote=True)
+        reason  = html.escape(str(a.get("reason", "")))
+        rows += (
+            f'<tr><td style="padding:0 0 14px 14px;border-left:3px solid {accent};">'
+            f'<div style="font-size:11px;color:#9ca3af;margin-bottom:3px;'
+            f'text-transform:uppercase;letter-spacing:0.4px;">{source} &middot; {pub}</div>'
+            f'<a href="{url}" style="font-size:14px;font-weight:600;color:#111827;'
+            f'text-decoration:none;line-height:1.4;display:block;">{title}</a>'
+            + (f'<div style="font-size:13px;color:#6b7280;margin-top:4px;line-height:1.5;">{reason}</div>'
+               if reason else "")
+            + f'</td></tr>'
+        )
+    return rows
+
+
 def format_digest_html(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> str:
-    """Full HTML digest for email."""
-    date_fmt = _t(lang, "date_fmt")
-    tz_name = getattr(tz, "key", "UTC") if hasattr(tz, "key") else "UTC"
-    now = datetime.now(tz).strftime(f"{date_fmt} ({tz_name})")
+    """Full HTML digest for email - styled layout matching Jarvis email standard."""
+    now_dt   = datetime.now(tz)
+    today    = _date_fr(now_dt)
+    time_str = now_dt.strftime("%H:%M")
 
-    def _e(s) -> str:
-        return html.escape(str(s) if s else "")
-
-    sections = []
+    sections = ""
 
     if _is_processed(data):
-        for cat in data.get("categories", []):
-            arts = cat.get("articles", [])
-            if not arts:
-                continue
-            rows = "".join(
-                f'<tr>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid #eee;vertical-align:top;'
-                f'width:100px;color:#888;font-size:12px;white-space:nowrap;">'
-                f'{_e(a.get("source",""))} {_e(a.get("published",""))}</td>'
-                f'<td style="padding:8px 12px;border-bottom:1px solid #eee;vertical-align:top;">'
-                f'<a href="{_e(a["url"])}" style="color:#2563eb;text-decoration:none;font-weight:500;">{_e(a["title"])}</a>'
-                + (f'<br><span style="color:#666;font-size:12px;">{_e(a.get("reason",""))}</span>'
-                   if a.get("reason") else "")
-                + f'</td></tr>'
-                for a in arts
-            )
-            sections.append(
-                f'<h2 style="font-family:sans-serif;font-size:15px;color:#1e293b;'
-                f'border-left:3px solid #2563eb;padding-left:10px;margin:24px 0 8px;">{_e(cat["name"])}</h2>'
-                f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;font-size:14px;">{rows}</table>'
-            )
+        # Featured section (yellow accent)
         picks = _featured_items(data)
         if picks:
             featured_label = _t(lang, "featured")
-            rows = "".join(
-                f'<tr><td style="padding:8px 12px;border-bottom:1px solid #f59e0b30;">'
-                f'<a href="{_e(p["url"])}" style="color:#d97706;font-weight:500;text-decoration:none;">{_e(p["title"])}</a>'
-                f'<br><span style="color:#666;font-size:12px;">{_e(p.get("source",""))} - {_e(p.get("reason",""))}</span>'
+            rows = _article_rows(picks, "#f59e0b")
+            sections += (
+                f'<tr><td style="padding:20px 0 12px 0;border-bottom:2px solid #f59e0b;">'
+                f'<span style="display:inline-block;width:4px;height:16px;background:#f59e0b;'
+                f'border-radius:2px;vertical-align:middle;"></span>'
+                f'<span style="margin-left:10px;font-size:12px;font-weight:700;color:#92400e;'
+                f'text-transform:uppercase;letter-spacing:0.8px;vertical-align:middle;">'
+                f'✍️ {html.escape(featured_label)}</span></td></tr>'
+                f'<tr><td style="background:#fffbeb;border-radius:6px;padding:4px 0;">'
+                f'<table width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
                 f'</td></tr>'
-                for p in picks
             )
-            sections.append(
-                f'<h2 style="font-family:sans-serif;font-size:15px;color:#92400e;'
-                f'border-left:3px solid #f59e0b;padding-left:10px;margin:24px 0 8px;">✍️ {_e(featured_label)}</h2>'
-                f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;font-size:14px;'
-                f'background:#fffbeb;border:1px solid #f59e0b40;">{rows}</table>'
+
+        # Categories
+        for i, cat in enumerate(data.get("categories", [])):
+            arts = cat.get("articles", [])
+            if not arts:
+                continue
+            accent = _CATEGORY_COLORS[i % len(_CATEGORY_COLORS)]
+            name   = html.escape(str(cat.get("name", "")))
+            count  = len(arts)
+            rows   = _article_rows(arts, accent)
+            sections += (
+                f'<tr><td style="padding:20px 0 12px 0;">'
+                f'<span style="display:inline-block;width:4px;height:16px;background:{accent};'
+                f'border-radius:2px;vertical-align:middle;"></span>'
+                f'<span style="margin-left:10px;font-size:12px;font-weight:700;color:#374151;'
+                f'text-transform:uppercase;letter-spacing:0.8px;vertical-align:middle;">{name}</span>'
+                f'<span style="margin-left:6px;font-size:11px;color:#9ca3af;vertical-align:middle;">'
+                f'({count})</span></td></tr>'
+                f'<tr><td><table width="100%" cellpadding="0" cellspacing="0">{rows}</table></td></tr>'
             )
-        count = sum(len(c.get("articles", [])) for c in data.get("categories", []))
+        total = sum(len(c.get("articles", [])) for c in data.get("categories", []))
+        subtitle = f'{total} articles · {len(data.get("categories", []))} categories'
     else:
         articles = data.get("articles", [])
-        count = data.get("count", len(articles))
+        total    = data.get("count", len(articles))
+        skipped  = data.get("skipped_url", 0) + data.get("skipped_topic", 0)
         by_src: dict = {}
         for a in articles:
             by_src.setdefault(a.get("source", "?"), []).append(a)
-        for src, arts in sorted(by_src.items()):
-            rows = "".join(
-                f'<tr><td style="padding:6px 12px;border-bottom:1px solid #eee;font-size:13px;">'
-                f'<a href="{_e(a["url"])}" style="color:#2563eb;text-decoration:none;">{_e(a["title"])}</a>'
-                f' <span style="color:#999;font-size:12px;">{_e(a.get("published",""))}</span>'
+        for i, (src, arts) in enumerate(sorted(by_src.items())):
+            accent = _CATEGORY_COLORS[i % len(_CATEGORY_COLORS)]
+            rows   = _article_rows(arts, accent)
+            src_e  = html.escape(src)
+            sections += (
+                f'<tr><td style="padding:20px 0 12px 0;">'
+                f'<span style="display:inline-block;width:4px;height:16px;background:{accent};'
+                f'border-radius:2px;vertical-align:middle;"></span>'
+                f'<span style="margin-left:10px;font-size:12px;font-weight:700;color:#374151;'
+                f'text-transform:uppercase;letter-spacing:0.8px;vertical-align:middle;">{src_e}</span>'
                 f'</td></tr>'
-                for a in arts
+                f'<tr><td><table width="100%" cellpadding="0" cellspacing="0">{rows}</table></td></tr>'
             )
-            sections.append(
-                f'<h2 style="font-family:sans-serif;font-size:14px;color:#334155;margin:20px 0 4px;">{_e(src)}</h2>'
-                f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;">{rows}</table>'
-            )
+        subtitle = f'{total} articles'
+        if skipped:
+            subtitle += f' · {skipped} filtres'
 
-    no_art = _t(lang, "no_articles")
-    body = "\n".join(sections) or f"<p style='color:#888;font-family:sans-serif;'>{html.escape(no_art)}</p>"
     html_title = _t(lang, "title")
-    footer = _t(lang, "footer")
+    no_art     = _t(lang, "no_articles")
+    body       = sections or (
+        f'<tr><td style="color:#9ca3af;font-size:14px;padding:16px 0;">'
+        f'{html.escape(no_art)}</td></tr>'
+    )
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f8fafc;">
-<div style="max-width:800px;margin:0 auto;background:#fff;padding:32px;font-family:sans-serif;">
-  <div style="border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:24px;">
-    <h1 style="font-size:18px;color:#1e293b;margin:0;">📡 {html.escape(html_title)}</h1>
-    <p style="color:#64748b;font-size:13px;margin:4px 0 0;">{now} - {count} articles</p>
-  </div>
-  {body}
-  <div style="border-top:1px solid #e2e8f0;margin-top:32px;padding-top:12px;
-              font-size:11px;color:#94a3b8;font-family:sans-serif;">
-    {html.escape(footer)}
-  </div>
-</div>
-</body></html>"""
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="padding:24px 16px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:800px;margin:0 auto;background:#ffffff;border-radius:10px;border:1px solid #e5e7eb;">
+          <!-- Header -->
+          <tr>
+            <td style="padding:24px 32px 16px 32px;border-bottom:1px solid #f3f4f6;">
+              <div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">{today}</div>
+              <div style="font-size:22px;font-weight:800;color:#111827;">📡 {html.escape(html_title)}</div>
+              <div style="font-size:13px;color:#6b7280;margin-top:4px;">{html.escape(subtitle)}</div>
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding:8px 32px 24px 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                {body}
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:14px 32px;background:#f9fafb;border-top:1px solid #f3f4f6;border-radius:0 0 10px 10px;">
+              <div style="font-size:11px;color:#9ca3af;">Jarvis · {time_str} · digest automatique quotidien</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
 
 
 # ---------------------------------------------------------------------------
