@@ -4,15 +4,20 @@
   "seen_url_ttl_days": 14,
   "topic_ttl_days": 5,
   "topic_similarity_threshold": 0.40,
+
   "sources": {
+    "_comment_security": "--- Securite / Vulnerabilites ---",
     "BleepingComputer":      "https://www.bleepingcomputer.com/feed/",
     "The Hacker News":       "https://feeds.feedburner.com/TheHackersNews",
-    "CERT-FR":               "https://www.cert.ssi.gouv.fr/feed/avis/",
+    "CERT-FR Avis":          "https://www.cert.ssi.gouv.fr/avis/feed/",
+    "CERT-FR Alertes":       "https://www.cert.ssi.gouv.fr/alerte/feed/",
     "Schneier on Security":  "https://www.schneier.com/blog/atom.xml",
     "Krebs on Security":     "https://krebsonsecurity.com/feed/",
     "SANS ISC":              "https://isc.sans.edu/rssfeed_full.xml",
-    "Ars Technica Security": "https://feeds.arstechnica.com/arstechnica/security",
+    "Ars Technica Security": "https://arstechnica.com/security/feed/",
     "Dark Reading":          "https://www.darkreading.com/rss.xml",
+
+    "_comment_sysops": "--- SysOps / DevOps / Infra ---",
     "IT-Connect":            "https://www.it-connect.fr/feed/",
     "Korben":                "https://korben.info/feed",
     "Hacker News":           "https://news.ycombinator.com/rss",
@@ -21,10 +26,30 @@
     "The Register":          "https://www.theregister.com/headlines.atom",
     "Lobste.rs":             "https://lobste.rs/rss",
     "LWN.net":               "https://lwn.net/headlines/rss",
+
+    "_comment_crypto": "--- Crypto / Bitcoin ---",
     "CoinDesk":              "https://www.coindesk.com/arc/outboundfeeds/rss",
     "CoinTelegraph":         "https://cointelegraph.com/rss",
     "Journal du Coin":       "https://journalducoin.com/feed/",
+
+    "_comment_ai": "--- IA / LLM ---",
     "The Decoder":           "https://the-decoder.com/feed/",
     "Le Big Data":           "https://www.lebigdata.fr/feed"
+  },
+
+  "sources_disabled": {
+    "_comment": "Sources disponibles mais non actives. Deplacer vers sources pour activer.",
+    "CERT-FR Complet":       "https://www.cert.ssi.gouv.fr/feed/",
+    "CERT-FR CTI":           "https://www.cert.ssi.gouv.fr/cti/feed/",
+    "CERT-FR Durcissement":  "https://www.cert.ssi.gouv.fr/dur/feed/",
+    "Ars Technica":          "https://arstechnica.com/feed/",
+    "Linux Weekly News":     "https://lwn.net/headlines/rss",
+    "Phoronix":              "https://www.phoronix.com/rss.php",
+    "Le Monde Informatique": "https://www.lemondeinformatique.fr/flux-rss/thematique/securite/rss.xml",
+    "ZDNet France":          "https://www.zdnet.fr/feeds/rss/actualites/",
+    "01net Securite":        "https://www.01net.com/rss/actualites/securite/",
+    "Bitcoin Magazine":      "https://bitcoinmagazine.com/feed",
+    "The Batch (deeplearning.ai)": "https://www.deeplearning.ai/the-batch/feed/",
+    "Simon Willison":        "https://simonwillison.net/atom/everything/"
   }
 }

@@ -328,6 +328,9 @@ def cmd_fetch(args, cfg: dict):
     max_per_src  = cfg.get("max_articles_per_source", 20)
     sources      = cfg.get("sources", {})
 
+    # Skip _comment_* keys (used as section headers in config)
+    sources = {k: v for k, v in sources.items() if not k.startswith("_")}
+
     if not sources:
         print("[ERROR] No sources configured. Run setup.py or check your config.", file=sys.stderr)
         sys.exit(1)
