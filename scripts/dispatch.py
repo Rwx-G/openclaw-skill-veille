@@ -7,7 +7,7 @@ Reads a digest JSON from stdin and dispatches to configured outputs.
 Supported output types:
   telegram_bot  - Direct Telegram Bot API (token auto-read from OpenClaw config)
   mail-client   - Delegates to mail-client skill CLI (fallback: SMTP config)
-  nextcloud     - Delegates to nextcloud skill CLI
+  nextcloud     - Delegates to nextcloud-files skill CLI
   file          - Writes digest to a local file path
 
 Content types per output:
@@ -432,7 +432,7 @@ def _out_nextcloud(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone
     content = cfg.get("content", "full_digest")
     text = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
 
-    nc_script = _SKILLS_DIR / "nextcloud" / "scripts" / "nextcloud.py"
+    nc_script = _SKILLS_DIR / "nextcloud-files" / "scripts" / "nextcloud.py"
     if not nc_script.exists():
         print(f"[dispatch:nextcloud] skill not installed ({nc_script})", file=sys.stderr)
         return False
