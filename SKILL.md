@@ -93,13 +93,36 @@ Edit `~/.openclaw/config/veille/config.json` and add/remove entries in the `"sou
 
 ## Storage and credentials
 
+### Files written by this skill
+
 | Path | Written by | Purpose | Contains secrets |
 |------|-----------|---------|-----------------|
-| `~/.openclaw/config/veille/config.json` | `setup.py` | Sources RSS, seuils, options | NO |
-| `~/.openclaw/data/veille/seen_urls.json` | `veille.py` | URLs deja presentees (TTL 14j) | NO |
-| `~/.openclaw/data/veille/topic_seen.json` | `veille.py` | Sujets deja couverts (TTL 5j) | NO |
+| `~/.openclaw/config/veille/config.json` | `setup.py` | Sources, outputs, options | NO |
+| `~/.openclaw/data/veille/seen_urls.json` | `veille.py` | URL dedup store (TTL 14d) | NO |
+| `~/.openclaw/data/veille/topic_seen.json` | `veille.py` | Topic dedup store (TTL 5d) | NO |
 
-This skill has **no credentials** - all RSS feeds are public.
+### Files read from outside the skill
+
+| Path | Read by | Key accessed | When |
+|------|---------|-------------|------|
+| `~/.openclaw/openclaw.json` | `dispatch.py` | `channels.telegram.botToken` (read-only) | Only when `telegram_bot` output is enabled and no `bot_token` is set in the output config |
+
+This is the only cross-config read. To avoid it entirely, set `bot_token` explicitly in your output config:
+
+```json
+{ "type": "telegram_bot", "bot_token": "YOUR_BOT_TOKEN", "chat_id": "...", "enabled": true }
+```
+
+### Output credentials (optional)
+
+Credentials are only used if you enable the corresponding output. None are required for core functionality (RSS fetch + dedup).
+
+| Output | Credential source | What is used |
+|--------|-----------------|-------------|
+| `telegram_bot` | `~/.openclaw/openclaw.json` or `bot_token` in output config | Bot token (read-only) |
+| `mail-client` | Delegated to mail-client skill (its own creds) | Nothing read directly |
+| `mail-client` (SMTP fallback) | `smtp_user` / `smtp_pass` in output config | SMTP login |
+| `nextcloud` | Delegated to nextcloud-files skill (its own creds) | Nothing read directly |
 
 ### Cleanup on uninstall
 

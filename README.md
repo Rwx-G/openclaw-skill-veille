@@ -158,13 +158,34 @@ openclaw-skill-veille/
 
 ## Storage & credentials
 
+### Written by this skill
+
 | Path | Purpose | Cleared by uninstall |
 |------|---------|----------------------|
-| `~/.openclaw/config/veille/config.json` | Sources + settings | Manual (`rm -rf ~/.openclaw/config/veille`) |
+| `~/.openclaw/config/veille/config.json` | Sources + settings + outputs | Manual (`rm -rf ~/.openclaw/config/veille`) |
 | `~/.openclaw/data/veille/seen_urls.json` | URL dedup store (14d TTL) | Manual (`rm -rf ~/.openclaw/data/veille`) |
 | `~/.openclaw/data/veille/topic_seen.json` | Topic fingerprints (5d TTL) | Manual (`rm -rf ~/.openclaw/data/veille`) |
 
-No credentials or secrets are stored. All RSS sources are public.
+### Cross-config read (dispatch only)
+
+When the `telegram_bot` output is enabled, `dispatch.py` reads `~/.openclaw/openclaw.json` (read-only) to auto-detect the Telegram bot token from `channels.telegram.botToken`. No other keys are accessed.
+
+To avoid this cross-config read, set `bot_token` directly in the output config:
+
+```json
+{ "type": "telegram_bot", "bot_token": "YOUR_BOT_TOKEN", "chat_id": "...", "enabled": true }
+```
+
+### Output credentials
+
+No credentials are required for core functionality. Output credentials are only used if you enable the corresponding output:
+
+| Output | How credentials are sourced |
+|--------|----------------------------|
+| `telegram_bot` | Auto-read from OpenClaw config, or explicit `bot_token` in output config |
+| `mail-client` | Delegated to mail-client skill (its own credentials, not duplicated) |
+| `mail-client` SMTP fallback | `smtp_user` / `smtp_pass` set directly in output config |
+| `nextcloud` | Delegated to nextcloud-files skill (its own credentials, not duplicated) |
 
 ## Uninstall
 
