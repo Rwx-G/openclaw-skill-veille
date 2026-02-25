@@ -1,0 +1,30 @@
+{
+  "hours_lookback": 24,
+  "max_articles_per_source": 20,
+  "seen_url_ttl_days": 14,
+  "topic_ttl_days": 5,
+  "topic_similarity_threshold": 0.40,
+  "sources": {
+    "BleepingComputer":      "https://www.bleepingcomputer.com/feed/",
+    "The Hacker News":       "https://feeds.feedburner.com/TheHackersNews",
+    "CERT-FR":               "https://www.cert.ssi.gouv.fr/feed/avis/",
+    "Schneier on Security":  "https://www.schneier.com/blog/atom.xml",
+    "Krebs on Security":     "https://krebsonsecurity.com/feed/",
+    "SANS ISC":              "https://isc.sans.edu/rssfeed_full.xml",
+    "Ars Technica Security": "https://feeds.arstechnica.com/arstechnica/security",
+    "Dark Reading":          "https://www.darkreading.com/rss.xml",
+    "IT-Connect":            "https://www.it-connect.fr/feed/",
+    "Korben":                "https://korben.info/feed",
+    "Hacker News":           "https://news.ycombinator.com/rss",
+    "DevOps.com":            "https://devops.com/feed/",
+    "The New Stack":         "https://thenewstack.io/feed/",
+    "The Register":          "https://www.theregister.com/headlines.atom",
+    "Lobste.rs":             "https://lobste.rs/rss",
+    "LWN.net":               "https://lwn.net/headlines/rss",
+    "CoinDesk":              "https://www.coindesk.com/arc/outboundfeeds/rss",
+    "CoinTelegraph":         "https://cointelegraph.com/rss",
+    "Journal du Coin":       "https://journalducoin.com/feed/",
+    "The Decoder":           "https://the-decoder.com/feed/",
+    "Le Big Data":           "https://www.lebigdata.fr/feed"
+  }
+}
