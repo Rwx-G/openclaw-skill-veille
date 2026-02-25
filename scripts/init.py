@@ -88,8 +88,12 @@ def check_fetch(cfg: dict):
         _report("WARN", "Network fetch", "No sources configured - skipping")
         return
 
-    # Take first source
-    first_name, first_url = next(iter(sources.items()))
+    # Take first real source (skip _comment_* keys)
+    real_sources = {k: v for k, v in sources.items() if not k.startswith("_")}
+    if not real_sources:
+        _report("WARN", "Network fetch", "No real sources configured - skipping")
+        return
+    first_name, first_url = next(iter(real_sources.items()))
 
     req = urllib.request.Request(first_url, headers={"User-Agent": USER_AGENT})
     try:
