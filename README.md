@@ -154,6 +154,23 @@ To enable a disabled source: move it from `sources_disabled` to `sources`, or ru
 
 When enabled, `veille.py score` calls the configured LLM to score articles 1-5. Articles scoring >= 3 are kept, >= `ghost_threshold` go to `ghost_picks`. API key is read from `api_key_file` (never stored in config). When disabled, `score` passes data through unchanged.
 
+### File output safety
+
+The `file` output type validates paths and content before writing. By default, only `~/.openclaw/` is allowed as a target directory. To allow additional directories, add them to `config.security.allowed_output_dirs`:
+
+```json
+{
+  "security": {
+    "allowed_output_dirs": [
+      "~/Documents/veille",
+      "/srv/digests"
+    ]
+  }
+}
+```
+
+Sensitive paths (`.ssh`, `.gnupg`, `/etc/`, `.bashrc`, `.env`, etc.) are always blocked regardless of allowlist. Written content is also checked for suspicious patterns (shell shebangs, SSH/PGP keys, code injection) and size-limited to 1 MB.
+
 ### Nextcloud output mode
 
 The nextcloud output defaults to **append** mode: each dispatch adds a date-separated section. Set `"mode": "overwrite"` to replace the file each time.
@@ -221,6 +238,13 @@ No credentials are required for core functionality. Output credentials are only 
 | `mail-client` | Delegated to mail-client skill (its own credentials, not duplicated) |
 | `mail-client` SMTP fallback | `smtp_user` / `smtp_pass` set directly in output config |
 | `nextcloud` | Delegated to nextcloud-files skill (its own credentials, not duplicated) |
+
+## Security
+
+- **Subprocess isolation**: skill-to-skill calls use `subprocess.run()` (never `shell=True`). Script paths are validated to reside under `~/.openclaw/workspace/skills/`.
+- **File output safety**: the `file` output type validates paths (allowlist + blocklist) and content (pattern detection + 1 MB size limit) before writing. See [Configuration > File output safety](#file-output-safety).
+- **Credential isolation**: API keys are read from dedicated files, never from config.json. SMTP credentials live in the output config block only when the mail-client skill fallback is used.
+- **Cross-config reads**: only `~/.openclaw/openclaw.json` is read (for Telegram bot token), and only when needed. Logged to stderr.
 
 ## Uninstall
 

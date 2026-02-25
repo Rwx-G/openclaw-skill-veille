@@ -143,6 +143,29 @@ python3 veille.py fetch --hours 720  # 30 days
 
 ---
 
+### File output blocked
+
+**Symptoms:** `[dispatch:file] BLOCKED: ...` in stderr, file output fails.
+
+**Causes and fixes:**
+
+1. **Path outside allowed directories**: By default, only `~/.openclaw/` is allowed. Add your target directory to `config.security.allowed_output_dirs`:
+   ```json
+   {
+     "security": {
+       "allowed_output_dirs": ["~/Documents/veille"]
+     }
+   }
+   ```
+
+2. **Path matches a blocked pattern**: Paths containing `.ssh`, `.gnupg`, `/etc/`, `.bashrc`, `.env`, etc. are always blocked, even inside an allowed directory. Choose a different target path.
+
+3. **Content blocked**: The digest content was rejected because it contains a suspicious pattern (e.g., `#!/`, SSH keys, `eval(`). This should not happen with normal RSS digests — check if a feed is injecting unexpected content.
+
+4. **Content too large**: The digest exceeds the 1 MB size limit. Reduce the number of articles (lower `top_n` or `max_articles_per_source`).
+
+---
+
 ## Debugging tips
 
 **See all fetch activity:**

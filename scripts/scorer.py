@@ -56,10 +56,23 @@ def _load_llm_config(cfg: dict) -> dict:
 
 
 def _read_api_key(llm_cfg: dict) -> str:
-    """Read API key from the file specified in config."""
+    """Read API key from the file specified in config.
+
+    Security: warns if the key file has overly permissive filesystem
+    permissions (world-readable). Recommended: chmod 600.
+    """
     key_file = Path(llm_cfg.get("api_key_file", "")).expanduser()
     if not key_file.exists():
         raise FileNotFoundError(f"API key file not found: {key_file}")
+    # Permission check (Unix only, skip silently on Windows)
+    try:
+        mode = key_file.stat().st_mode & 0o777
+        if mode & 0o044:  # readable by group or others
+            print(f"[scorer] WARNING: {key_file} has permissive mode {oct(mode)} "
+                  f"- recommend chmod 600", file=sys.stderr)
+    except (OSError, AttributeError):
+        pass  # Windows or unsupported FS
+    print(f"[scorer] reading API key from {key_file}", file=sys.stderr)
     return key_file.read_text(encoding="utf-8").strip()
 
 

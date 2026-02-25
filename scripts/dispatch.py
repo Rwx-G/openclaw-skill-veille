@@ -41,6 +41,100 @@ _SKILLS_DIR = pathlib.Path.home() / ".openclaw" / "workspace" / "skills"
 _OC_CONFIG  = pathlib.Path.home() / ".openclaw" / "openclaw.json"
 CONFIG_PATH = _CONFIG_DIR / "config.json"
 
+
+def _validate_skill_script(script_path: pathlib.Path, skill_name: str) -> bool:
+    """Validate that a skill script path is under the expected skills directory.
+
+    Security: prevents path traversal by ensuring subprocess targets are
+    within ~/.openclaw/workspace/skills/. Logs the resolved path for audit.
+    """
+    try:
+        resolved = script_path.resolve()
+        skills_resolved = _SKILLS_DIR.resolve()
+        if not str(resolved).startswith(str(skills_resolved)):
+            print(f"[dispatch] BLOCKED: {skill_name} script path {resolved} "
+                  f"is outside {skills_resolved}", file=sys.stderr)
+            return False
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# File output safety
+# ---------------------------------------------------------------------------
+
+_BLOCKED_PATH_PATTERNS = [
+    ".ssh", ".gnupg", ".config/systemd", "crontab",
+    "/etc/", ".bashrc", ".profile", ".bash_profile", ".zshrc",
+    ".env",
+]
+
+_DEFAULT_ALLOWED_DIR = pathlib.Path.home() / ".openclaw"
+
+_MAX_OUTPUT_SIZE = 1_048_576  # 1 MB
+
+_BLOCKED_CONTENT_PATTERNS = [
+    "#!/",
+    "ssh-rsa ", "ssh-ed25519 ", "ssh-ecdsa ",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "BEGIN RSA PRIVATE KEY",
+    "BEGIN PGP",
+    "eval(", "exec(", "__import__(",
+    "import os", "import subprocess",
+]
+
+
+def _validate_output_path(file_path: str, config: dict) -> pathlib.Path | None:
+    """Validate that a file output path is safe to write to."""
+    try:
+        p = pathlib.Path(file_path).expanduser().resolve()
+    except (OSError, ValueError):
+        print(f"[dispatch:file] BLOCKED: cannot resolve path {file_path!r}",
+              file=sys.stderr)
+        return None
+
+    p_str = str(p)
+    for pattern in _BLOCKED_PATH_PATTERNS:
+        if pattern in p_str:
+            print(f"[dispatch:file] BLOCKED: path {p} matches blocked "
+                  f"pattern {pattern!r}", file=sys.stderr)
+            return None
+
+    allowed_dirs = [_DEFAULT_ALLOWED_DIR.resolve()]
+    for extra in config.get("security", {}).get("allowed_output_dirs", []):
+        try:
+            allowed_dirs.append(pathlib.Path(extra).expanduser().resolve())
+        except (OSError, ValueError):
+            pass
+
+    for allowed in allowed_dirs:
+        if str(p).startswith(str(allowed)):
+            return p
+
+    print(f"[dispatch:file] BLOCKED: {p} is outside allowed directories "
+          f"{[str(d) for d in allowed_dirs]} - add to "
+          f"config.security.allowed_output_dirs to allow", file=sys.stderr)
+    return None
+
+
+def _validate_file_content(text: str) -> bool:
+    """Validate that digest content does not contain suspicious patterns."""
+    if len(text.encode("utf-8")) > _MAX_OUTPUT_SIZE:
+        print(f"[dispatch:file] BLOCKED: content too large "
+              f"({len(text.encode('utf-8'))} bytes, max {_MAX_OUTPUT_SIZE})",
+              file=sys.stderr)
+        return False
+
+    for pattern in _BLOCKED_CONTENT_PATTERNS:
+        if pattern in text:
+            print(f"[dispatch:file] BLOCKED: content contains suspicious "
+                  f"pattern {pattern!r}", file=sys.stderr)
+            return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # i18n strings
 # ---------------------------------------------------------------------------
@@ -353,10 +447,17 @@ def format_digest_html(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -
 
 
 def _oc_telegram_token() -> str:
-    """Read Telegram bot token from ~/.openclaw/openclaw.json."""
+    """Read Telegram bot token from ~/.openclaw/openclaw.json (read-only).
+
+    Cross-config read: this is the only file read outside the skill's own
+    config directory. To avoid this read entirely, set 'bot_token' explicitly
+    in the telegram_bot output config.
+    """
     if not _OC_CONFIG.exists():
         return ""
     try:
+        print(f"[dispatch:telegram] reading bot token from {_OC_CONFIG} "
+              f"(set bot_token in output config to skip this)", file=sys.stderr)
         d = json.loads(_OC_CONFIG.read_text(encoding="utf-8"))
         return d.get("channels", {}).get("telegram", {}).get("botToken", "")
     except Exception:
@@ -422,7 +523,7 @@ def _out_mail(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc)
 
     # Try mail-client skill
     mail_script = _SKILLS_DIR / "mail-client" / "scripts" / "mail.py"
-    if mail_script.exists():
+    if mail_script.exists() and _validate_skill_script(mail_script, "mail-client"):
         cmd = [sys.executable, str(mail_script), "send",
                "--to", mail_to, "--subject", subject, "--body", body_plain]
         if body_html:
@@ -497,6 +598,8 @@ def _out_nextcloud(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone
     if not nc_script.exists():
         print(f"[dispatch:nextcloud] skill not installed ({nc_script})", file=sys.stderr)
         return False
+    if not _validate_skill_script(nc_script, "nextcloud-files"):
+        return False
 
     mode = cfg.get("mode", "append")
 
@@ -529,11 +632,18 @@ def _out_file(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc)
         print("[dispatch:file] path required", file=sys.stderr)
         return False
 
+    global_config = cfg.get("_global_config", {})
+    p = _validate_output_path(file_path, global_config)
+    if p is None:
+        return False
+
     content = cfg.get("content", "full_digest")
     text = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
 
+    if not _validate_file_content(text):
+        return False
+
     try:
-        p = pathlib.Path(file_path).expanduser()
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
         print(f"[dispatch:file] written to {p} OK", file=sys.stderr)
@@ -596,8 +706,15 @@ def dispatch(data: dict, config: dict, profile: str = None) -> dict:
             print(f"[dispatch] unknown output type: {out_type!r}", file=sys.stderr)
             results["skip"].append(out_type)
             continue
+        out["_global_config"] = config
         ok = handler(out, data, lang=lang, tz=tz)
         results["ok" if ok else "fail"].append(out_type)
+
+    # Audit summary
+    total = len(results["ok"]) + len(results["fail"]) + len(results["skip"])
+    print(f"[dispatch] audit: {total} outputs processed "
+          f"(ok={results['ok']}, fail={results['fail']}, skip={results['skip']})",
+          file=sys.stderr)
 
     return results
 

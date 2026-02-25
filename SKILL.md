@@ -134,6 +134,28 @@ python3 scripts/setup.py --cleanup
 
 ---
 
+## Security model
+
+### Credential isolation
+- API keys are read from dedicated files (default `~/.openclaw/secrets/`), never from config.json. The scorer warns at runtime if a key file has overly permissive filesystem permissions.
+- SMTP credentials (fallback only) are stored in the output config block — use the mail-client skill delegation to avoid storing SMTP passwords.
+
+### Subprocess boundaries
+- Dispatch delegates to other OpenClaw skills via `subprocess.run()` (never `shell=True`). Script paths are validated to reside under `~/.openclaw/workspace/skills/` before execution, preventing path traversal.
+- No credentials are passed as subprocess arguments — each skill manages its own authentication.
+
+### File output safety
+- The `file` output type validates the target path before writing: only `~/.openclaw/` is allowed by default. Additional directories can be whitelisted via `config.security.allowed_output_dirs`. Sensitive paths (`.ssh`, `.gnupg`, `/etc/`, `.bashrc`, etc.) are always blocked regardless of allowlist.
+- Written content is checked for suspicious patterns (shell shebangs, SSH keys, PGP blocks, code injection) and size-limited to 1 MB.
+
+### Cross-config reads
+- The only cross-config file read is `~/.openclaw/openclaw.json` for the Telegram bot token, and only when `telegram_bot` output is enabled without an explicit `bot_token`. This read is logged to stderr. Set `bot_token` in the output config to eliminate this read entirely.
+
+### Autonomous dispatch
+- When scheduled (cron), the skill can send messages/files to configured outputs without user interaction. All dispatch actions are logged to stderr with an audit summary. Use `enabled: false` on any output to disable it without removing its config.
+
+---
+
 ## CLI reference
 
 ### `fetch`
@@ -216,6 +238,7 @@ Output types: `telegram_bot`, `mail-client`, `nextcloud`, `file`.
 - `telegram_bot`: bot token auto-read from OpenClaw config - no extra setup if Telegram already configured.
 - `mail-client`: delegates to mail-client skill if installed, falls back to raw SMTP config.
 - `nextcloud`: delegates to nextcloud-files skill if installed (append mode by default with date separator).
+- `file`: writes digest to a local file. Path must be under `~/.openclaw/` (default) or a directory listed in `config.security.allowed_output_dirs`. Sensitive paths and suspicious content are blocked (see Security model).
 
 Configure outputs interactively:
 ```bash
@@ -279,6 +302,30 @@ Set `"mode": "overwrite"` in the output config to restore the old behavior:
 ```json
 { "type": "nextcloud", "path": "/Veille/digest.md", "mode": "overwrite" }
 ```
+
+## File output configuration
+
+The `file` output writes digests to the local filesystem. By default, only paths under `~/.openclaw/` are allowed. To authorize additional directories, use `config.security.allowed_output_dirs`:
+
+```json
+{
+  "security": {
+    "allowed_output_dirs": [
+      "~/Documents/veille",
+      "/srv/digests"
+    ]
+  }
+}
+```
+
+**Blocked paths** (always rejected, even if inside an allowed directory):
+`.ssh`, `.gnupg`, `.config/systemd`, `crontab`, `/etc/`, `.bashrc`, `.profile`, `.bash_profile`, `.zshrc`, `.env`
+
+**Content validation** — written content is rejected if it:
+- Exceeds 1 MB
+- Contains shell shebangs (`#!/`), SSH keys, PGP blocks, or code injection patterns (`eval(`, `exec(`, `__import__(`, `import os`, `import subprocess`)
+
+All blocked attempts are logged to stderr with the reason.
 
 ---
 
@@ -372,3 +419,4 @@ Common issues:
 - **XML parse error on a feed**: some feeds use non-standard XML; the skill skips broken items silently
 - **All articles filtered as seen**: run `seen-stats` to check store size; reset with `rm seen_urls.json`
 - **Import error**: ensure you run `veille.py` from its directory or via full path
+- **File output blocked**: path is outside `~/.openclaw/` — add the target directory to `config.security.allowed_output_dirs` (see File output configuration)
