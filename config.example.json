@@ -100,6 +100,58 @@
     "VentureBeat AI":        "https://venturebeat.com/category/ai/feed/",
     "Simon Willison":        "https://simonwillison.net/atom/everything/",
     "Hugging Face Blog":     "https://huggingface.co/blog/feed.xml",
-    "Towards AI":            "https://pub.towardsai.net/feed"
+    "Towards AI":            "https://pub.towardsai.net/feed",
+
+    "_comment_actu_fr": "--- Actualites generalistes (FR) ---",
+    "Le Monde":              "https://www.lemonde.fr/rss/une.xml",
+    "Le Figaro":             "https://www.lefigaro.fr/rss/figaro_actualites.xml",
+    "BFM TV":                "https://www.bfmtv.com/rss/news-24-7/",
+    "France Info":           "https://www.francetvinfo.fr/titres.rss",
+    "Liberation":            "https://www.liberation.fr/arc/outboundfeeds/rss/",
+    "L'Obs":                 "https://www.nouvelobs.com/rss.xml",
+    "Mediapart":             "https://www.mediapart.fr/articles/feed",
+    "RFI":                   "https://www.rfi.fr/fr/rss",
+    "Le Point":              "https://www.lepoint.fr/rss/actualites.xml",
+
+    "_comment_actu_en": "--- Actualites generalistes (EN) ---",
+    "BBC News":              "https://feeds.bbci.co.uk/news/rss.xml",
+    "The Guardian":          "https://www.theguardian.com/world/rss",
+    "Al Jazeera":            "https://www.aljazeera.com/xml/rss/all.xml",
+
+    "_comment_finance": "--- Finance / Economie ---",
+    "La Tribune":            "https://www.latribune.fr/rss/rubriques/actualite.html",
+    "Bloomberg":             "https://feeds.bloomberg.com/markets/news.rss",
+    "Financial Times":       "https://www.ft.com/rss/home",
+    "Le Monde Economie":     "https://www.lemonde.fr/economie/rss_full.xml",
+    "BFM Economie":          "https://www.bfmtv.com/rss/economie/",
+
+    "_comment_sciences": "--- Sciences ---",
+    "Futura Sciences":       "https://www.futura-sciences.com/rss/actualites.xml",
+    "Science Daily":         "https://www.sciencedaily.com/rss/top/science.xml",
+    "Nature News":           "https://www.nature.com/nature.rss",
+    "Sciences et Avenir":    "https://www.sciencesetavenir.fr/rss.xml",
+    "Pour La Science":       "https://www.pourlascience.fr/rss.xml",
+
+    "_comment_geo": "--- Geopolitique / International ---",
+    "Courrier International": "https://www.courrierinternational.com/feed/all/rss.xml",
+    "The Economist":         "https://www.economist.com/latest/rss.xml",
+    "Foreign Policy":        "https://foreignpolicy.com/feed/",
+    "Le Grand Continent":    "https://legrandcontinent.eu/fr/feed/",
+
+    "_comment_env": "--- Environnement / Climat ---",
+    "Reporterre":            "https://reporterre.net/spip.php?page=backend",
+    "Le Monde Environnement":"https://www.lemonde.fr/planete/rss_full.xml",
+    "Bon Pote":              "https://bonpote.com/feed/",
+    "Carbon Brief":          "https://www.carbonbrief.org/feed",
+
+    "_comment_sante": "--- Sante ---",
+    "Le Quotidien du Medecin": "https://www.lequotidiendumedecin.fr/rss.xml",
+
+    "_comment_culture": "--- Culture / Medias ---",
+    "Telerama":              "https://www.telerama.fr/rss/telerama.xml",
+    "Slate FR":              "https://www.slate.fr/rss.xml",
+    "Arret sur Images":      "https://www.arretsurimages.net/rss",
+    "Konbini":               "https://www.konbini.com/fr/feed/",
+    "Canard PC":             "https://www.canardpc.com/feed"
   }
 }
