@@ -30,6 +30,7 @@ import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -41,6 +42,71 @@ _OC_CONFIG  = pathlib.Path.home() / ".openclaw" / "openclaw.json"
 CONFIG_PATH = _CONFIG_DIR / "config.json"
 
 # ---------------------------------------------------------------------------
+# i18n strings
+# ---------------------------------------------------------------------------
+
+_STRINGS: dict = {
+    "fr": {
+        "title":       "Veille technique",
+        "subtitle":    "{count} articles",
+        "featured":    "Selections",
+        "no_articles": "Aucun article.",
+        "filtered":    "{n} filtre(s)",
+        "footer":      "OpenClaw veille skill",
+        "date_fmt":    "%d/%m/%Y %H:%M",
+        "recap_title": "Veille tech",
+    },
+    "en": {
+        "title":       "Tech Watch",
+        "subtitle":    "{count} articles",
+        "featured":    "Highlights",
+        "no_articles": "No articles.",
+        "filtered":    "{n} filtered",
+        "footer":      "OpenClaw veille skill",
+        "date_fmt":    "%Y-%m-%d %H:%M",
+        "recap_title": "Tech watch",
+    },
+}
+
+_DEFAULT_LANG = "fr"
+
+
+def _t(lang: str, key: str, **kwargs) -> str:
+    """Return translated string, with optional format kwargs."""
+    s = _STRINGS.get(lang, _STRINGS[_DEFAULT_LANG]).get(key, key)
+    return s.format(**kwargs) if kwargs else s
+
+
+# ---------------------------------------------------------------------------
+# Timezone helper
+# ---------------------------------------------------------------------------
+
+
+def _get_tz(config: dict):
+    """
+    Resolve timezone for date formatting.
+    Priority: config['timezone'] > system (/etc/timezone, timedatectl) > UTC.
+    """
+    # 1. Explicit config
+    tz_name = config.get("timezone", "").strip()
+
+    # 2. System timezone
+    if not tz_name:
+        etc_tz = pathlib.Path("/etc/timezone")
+        if etc_tz.exists():
+            tz_name = etc_tz.read_text(encoding="utf-8").strip()
+
+    # 3. Try to load, fallback to UTC
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, Exception):
+            print(f"[dispatch] unknown timezone '{tz_name}', using UTC", file=sys.stderr)
+
+    return timezone.utc
+
+
+# ---------------------------------------------------------------------------
 # Format detection
 # ---------------------------------------------------------------------------
 
@@ -50,39 +116,48 @@ def _is_processed(data: dict) -> bool:
     return "categories" in data
 
 
+def _featured_items(data: dict) -> list:
+    """Return featured/highlighted articles - supports ghost_picks and featured keys."""
+    return data.get("featured", data.get("ghost_picks", []))
+
+
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
 
 
-def format_recap(data: dict) -> str:
+def format_recap(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> str:
     """Short plain-text recap (Telegram or similar)."""
-    now = datetime.now(timezone.utc).strftime("%d/%m %H:%M")
+    now = datetime.now(tz).strftime("%d/%m %H:%M")
+    title = _t(lang, "recap_title")
     if _is_processed(data):
         categories = data.get("categories", [])
         count = sum(len(c.get("articles", [])) for c in categories)
-        ghost_picks = data.get("ghost_picks", [])
-        lines = [f"*Veille tech - {now}*", f"{count} articles"]
+        picks = _featured_items(data)
+        lines = [f"*{title} - {now}*", f"{count} articles"]
         for cat in categories:
             n = len(cat.get("articles", []))
             if n:
                 lines.append(f"- {cat['name']}: {n}")
-        if ghost_picks:
-            lines.append(f"\n✍️ {len(ghost_picks)} candidat(s) Ghost")
+        if picks:
+            featured_label = _t(lang, "featured")
+            lines.append(f"\n✍️ {len(picks)} {featured_label.lower()}")
     else:
         count = data.get("count", 0)
         skipped = data.get("skipped_url", 0) + data.get("skipped_topic", 0)
         hours = data.get("hours", 24)
-        lines = [f"*Veille tech - {now}*", f"{count} articles ({hours}h)"]
+        lines = [f"*{title} - {now}*", f"{count} articles ({hours}h)"]
         if skipped:
-            lines.append(f"{skipped} filtré(s)")
+            lines.append(_t(lang, "filtered", n=skipped))
     return "\n".join(lines)
 
 
-def format_digest_markdown(data: dict) -> str:
+def format_digest_markdown(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> str:
     """Full Markdown digest for Nextcloud or file."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    lines = [f"# Veille technique - {now}", ""]
+    date_fmt = _t(lang, "date_fmt")
+    now = datetime.now(tz).strftime(date_fmt)
+    title = _t(lang, "title")
+    lines = [f"# {title} - {now}", ""]
 
     if _is_processed(data):
         for cat in data.get("categories", []):
@@ -94,9 +169,10 @@ def format_digest_markdown(data: dict) -> str:
                 if reason:
                     lines.append(f"  {reason}")
                 lines.append("")
-        picks = data.get("ghost_picks", [])
+        picks = _featured_items(data)
         if picks:
-            lines += ["## ✍️ Candidats Ghost", ""]
+            featured_label = _t(lang, "featured")
+            lines += [f"## ✍️ {featured_label}", ""]
             for p in picks:
                 lines.append(f"- **[{p['title']}]({p['url']})**  ")
                 lines.append(f"  *{p['source']}* - {p.get('reason', '')}")
@@ -104,7 +180,8 @@ def format_digest_markdown(data: dict) -> str:
     else:
         articles = data.get("articles", [])
         skipped = data.get("skipped_url", 0) + data.get("skipped_topic", 0)
-        lines += [f"*{len(articles)} articles | {skipped} filtres*", ""]
+        filtered_str = _t(lang, "filtered", n=skipped)
+        lines += [f"*{len(articles)} articles | {filtered_str}*", ""]
         by_src: dict = {}
         for a in articles:
             by_src.setdefault(a.get("source", "?"), []).append(a)
@@ -118,9 +195,11 @@ def format_digest_markdown(data: dict) -> str:
     return "\n".join(lines)
 
 
-def format_digest_html(data: dict) -> str:
+def format_digest_html(data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> str:
     """Full HTML digest for email."""
-    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    date_fmt = _t(lang, "date_fmt")
+    tz_name = getattr(tz, "key", "UTC") if hasattr(tz, "key") else "UTC"
+    now = datetime.now(tz).strftime(f"{date_fmt} ({tz_name})")
 
     def _e(s) -> str:
         return html.escape(str(s) if s else "")
@@ -149,8 +228,9 @@ def format_digest_html(data: dict) -> str:
                 f'border-left:3px solid #2563eb;padding-left:10px;margin:24px 0 8px;">{_e(cat["name"])}</h2>'
                 f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;font-size:14px;">{rows}</table>'
             )
-        picks = data.get("ghost_picks", [])
+        picks = _featured_items(data)
         if picks:
+            featured_label = _t(lang, "featured")
             rows = "".join(
                 f'<tr><td style="padding:8px 12px;border-bottom:1px solid #f59e0b30;">'
                 f'<a href="{_e(p["url"])}" style="color:#d97706;font-weight:500;text-decoration:none;">{_e(p["title"])}</a>'
@@ -160,7 +240,7 @@ def format_digest_html(data: dict) -> str:
             )
             sections.append(
                 f'<h2 style="font-family:sans-serif;font-size:15px;color:#92400e;'
-                f'border-left:3px solid #f59e0b;padding-left:10px;margin:24px 0 8px;">✍️ Candidats Ghost</h2>'
+                f'border-left:3px solid #f59e0b;padding-left:10px;margin:24px 0 8px;">✍️ {_e(featured_label)}</h2>'
                 f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;font-size:14px;'
                 f'background:#fffbeb;border:1px solid #f59e0b40;">{rows}</table>'
             )
@@ -184,20 +264,23 @@ def format_digest_html(data: dict) -> str:
                 f'<table style="width:100%;border-collapse:collapse;font-family:sans-serif;">{rows}</table>'
             )
 
-    body = "\n".join(sections) or "<p style='color:#888;font-family:sans-serif;'>Aucun article.</p>"
+    no_art = _t(lang, "no_articles")
+    body = "\n".join(sections) or f"<p style='color:#888;font-family:sans-serif;'>{html.escape(no_art)}</p>"
+    html_title = _t(lang, "title")
+    footer = _t(lang, "footer")
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f8fafc;">
 <div style="max-width:800px;margin:0 auto;background:#fff;padding:32px;font-family:sans-serif;">
   <div style="border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:24px;">
-    <h1 style="font-size:18px;color:#1e293b;margin:0;">📡 Veille technique</h1>
+    <h1 style="font-size:18px;color:#1e293b;margin:0;">📡 {html.escape(html_title)}</h1>
     <p style="color:#64748b;font-size:13px;margin:4px 0 0;">{now} - {count} articles</p>
   </div>
   {body}
   <div style="border-top:1px solid #e2e8f0;margin-top:32px;padding-top:12px;
               font-size:11px;color:#94a3b8;font-family:sans-serif;">
-    OpenClaw veille skill
+    {html.escape(footer)}
   </div>
 </div>
 </body></html>"""
@@ -224,7 +307,7 @@ def _oc_telegram_token() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _out_telegram(cfg: dict, data: dict) -> bool:
+def _out_telegram(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> bool:
     """Send to Telegram via Bot API."""
     token = cfg.get("bot_token") or _oc_telegram_token()
     chat_id = str(cfg.get("chat_id", ""))
@@ -236,7 +319,7 @@ def _out_telegram(cfg: dict, data: dict) -> bool:
         return False
 
     content = cfg.get("content", "recap")
-    text = format_recap(data) if content == "recap" else format_digest_markdown(data)
+    text = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
 
     payload = json.dumps({
         "chat_id": chat_id,
@@ -262,18 +345,19 @@ def _out_telegram(cfg: dict, data: dict) -> bool:
         return False
 
 
-def _out_mail(cfg: dict, data: dict) -> bool:
+def _out_mail(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> bool:
     """Send via mail-client skill CLI, fallback to raw SMTP."""
     mail_to = cfg.get("mail_to", "")
     if not mail_to:
         print("[dispatch:mail-client] mail_to required", file=sys.stderr)
         return False
 
-    now = datetime.now(timezone.utc).strftime("%d/%m/%Y")
-    subject = cfg.get("subject", f"Veille tech - {now}")
+    date_fmt = _t(lang, "date_fmt")
+    now = datetime.now(tz).strftime(date_fmt)
+    subject = cfg.get("subject", f"{_t(lang, 'title')} - {now}")
     content = cfg.get("content", "full_digest")
-    body_plain = format_recap(data) if content == "recap" else format_digest_markdown(data)
-    body_html  = None if content == "recap" else format_digest_html(data)
+    body_plain = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
+    body_html  = None if content == "recap" else format_digest_html(data, lang, tz)
 
     # Try mail-client skill
     mail_script = _SKILLS_DIR / "mail-client" / "scripts" / "mail.py"
@@ -293,10 +377,10 @@ def _out_mail(cfg: dict, data: dict) -> bool:
         print("[dispatch:mail-client] falling back to SMTP config", file=sys.stderr)
 
     # SMTP fallback
-    return _smtp_fallback(cfg, subject, body_plain, body_html)
+    return _smtp_fallback(cfg, subject, body_plain, body_html, tz=tz)
 
 
-def _smtp_fallback(cfg: dict, subject: str, body_plain: str, body_html: str = None) -> bool:
+def _smtp_fallback(cfg: dict, subject: str, body_plain: str, body_html: str = None, tz=timezone.utc) -> bool:
     """Raw SMTP send when mail-client skill is unavailable."""
     import smtplib
     import ssl as _ssl
@@ -338,7 +422,7 @@ def _smtp_fallback(cfg: dict, subject: str, body_plain: str, body_html: str = No
         return False
 
 
-def _out_nextcloud(cfg: dict, data: dict) -> bool:
+def _out_nextcloud(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> bool:
     """Write to Nextcloud via nextcloud skill CLI."""
     nc_path = cfg.get("path", "")
     if not nc_path:
@@ -346,7 +430,7 @@ def _out_nextcloud(cfg: dict, data: dict) -> bool:
         return False
 
     content = cfg.get("content", "full_digest")
-    text = format_recap(data) if content == "recap" else format_digest_markdown(data)
+    text = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
 
     nc_script = _SKILLS_DIR / "nextcloud" / "scripts" / "nextcloud.py"
     if not nc_script.exists():
@@ -368,7 +452,7 @@ def _out_nextcloud(cfg: dict, data: dict) -> bool:
         return False
 
 
-def _out_file(cfg: dict, data: dict) -> bool:
+def _out_file(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> bool:
     """Write digest to a local file."""
     file_path = cfg.get("path", "")
     if not file_path:
@@ -376,7 +460,7 @@ def _out_file(cfg: dict, data: dict) -> bool:
         return False
 
     content = cfg.get("content", "full_digest")
-    text = format_recap(data) if content == "recap" else format_digest_markdown(data)
+    text = format_recap(data, lang, tz) if content == "recap" else format_digest_markdown(data, lang, tz)
 
     try:
         p = pathlib.Path(file_path).expanduser()
@@ -424,6 +508,13 @@ def dispatch(data: dict, config: dict, profile: str = None) -> dict:
         print("[dispatch] No outputs configured. Add 'outputs' to ~/.openclaw/config/veille/config.json", file=sys.stderr)
         return results
 
+    # Resolve shared lang + tz from config
+    lang = config.get("language", _DEFAULT_LANG)
+    if lang not in _STRINGS:
+        print(f"[dispatch] unknown language '{lang}', falling back to '{_DEFAULT_LANG}'", file=sys.stderr)
+        lang = _DEFAULT_LANG
+    tz = _get_tz(config)
+
     for out in outputs:
         out_type = out.get("type", "")
         if not out.get("enabled", True):
@@ -435,7 +526,7 @@ def dispatch(data: dict, config: dict, profile: str = None) -> dict:
             print(f"[dispatch] unknown output type: {out_type!r}", file=sys.stderr)
             results["skip"].append(out_type)
             continue
-        ok = handler(out, data)
+        ok = handler(out, data, lang=lang, tz=tz)
         results["ok" if ok else "fail"].append(out_type)
 
     return results

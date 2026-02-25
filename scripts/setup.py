@@ -125,6 +125,26 @@ def run_setup(interactive: bool = True):
         max_arts = int(default_max)
     example_cfg["max_articles_per_source"] = max_arts
 
+    # Language
+    default_lang = example_cfg.get("language", "fr")
+    lang = _ask("  Language (fr / en)", default_lang, interactive).strip().lower()
+    if lang not in ("fr", "en"):
+        print(f"  [WARN] Unknown language '{lang}', using 'fr'")
+        lang = "fr"
+    example_cfg["language"] = lang
+
+    # Timezone
+    system_tz = ""
+    try:
+        etc_tz = Path("/etc/timezone")
+        if etc_tz.exists():
+            system_tz = etc_tz.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    default_tz = example_cfg.get("timezone", system_tz or "UTC")
+    tz_val = _ask("  Timezone (e.g. Europe/Paris)", default_tz, interactive).strip()
+    example_cfg["timezone"] = tz_val or default_tz
+
     # Step 3: Write config
     print()
     print("[3/3] Writing config file...")

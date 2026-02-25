@@ -4,6 +4,8 @@
   "seen_url_ttl_days": 14,
   "topic_ttl_days": 5,
   "topic_similarity_threshold": 0.40,
+  "language": "fr",
+  "timezone": "Europe/Paris",
 
   "sources": {
     "_comment_security": "--- Securite / Vulnerabilites ---",
