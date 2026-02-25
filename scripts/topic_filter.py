@@ -359,17 +359,18 @@ class TopicStore:
 
 def _is_dominated(title: str, source: str, tier: int,
                    fp: frozenset, ne: frozenset,
-                   candidates: list) -> bool:
+                   candidates: list,
+                   threshold: float = TOPIC_SIMILARITY_THRESHOLD) -> bool:
     """
     Verifie si un article est domine par un des candidats (meilleur tier).
-    v1 : seulement les duplicates nets (sim >= TOPIC_SIMILARITY_THRESHOLD).
+    v1 : seulement les duplicates nets (sim >= threshold).
     La zone grise (0.25-0.40) est conservee.
     """
     for c in candidates:
         if c["tier"] >= tier:
             continue   # on ne filtre que si la source concurrente est meilleure
         sim = article_similarity(title, c["title"], fp, c["fp"], ne, c["ne"])
-        if sim >= TOPIC_SIMILARITY_THRESHOLD:
+        if sim >= threshold:
             return True   # duplicate net
 
     return False
@@ -378,6 +379,7 @@ def _is_dominated(title: str, source: str, tier: int,
 def deduplicate_articles(
     articles: list,
     store: TopicStore,
+    threshold: float = TOPIC_SIMILARITY_THRESHOLD,
 ) -> tuple:
     """
     Deduplique une liste d'articles par sujet + autorite de source.
@@ -410,12 +412,12 @@ def deduplicate_articles(
         ne     = named_entities(title)
 
         # 1. Verification contre le store historique
-        if _is_dominated(title, source, tier, fp, ne, hist_entries):
+        if _is_dominated(title, source, tier, fp, ne, hist_entries, threshold):
             filtered += 1
             continue
 
         # 2. Verification intra-batch
-        if _is_dominated(title, source, tier, fp, ne, kept_meta):
+        if _is_dominated(title, source, tier, fp, ne, kept_meta, threshold):
             filtered += 1
             continue
 

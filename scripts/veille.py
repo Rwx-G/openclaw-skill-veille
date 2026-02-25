@@ -23,6 +23,9 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _retry import with_retry
+
 # ---- Paths ------------------------------------------------------------------
 
 SKILL_DIR   = Path(__file__).resolve().parent.parent
@@ -36,6 +39,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from seen_store import SeenStore, SEEN_URL_FILE
 from topic_filter import TopicStore, deduplicate_articles, TOPIC_SEEN_FILE
 from dispatch import dispatch as _dispatch
+
+# ---- Exceptions -------------------------------------------------------------
+
+class VeilleError(RuntimeError):
+    pass
+
+class VeilleConfigError(VeilleError):
+    pass
 
 # ---- Default config ---------------------------------------------------------
 
@@ -147,8 +158,10 @@ def fetch_feed(source_name: str, url: str, hours: int, max_articles: int) -> lis
     """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read()
+        def _do():
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return resp.read()
+        raw = with_retry(_do)
     except Exception as e:
         print(f"[WARN] {source_name}: fetch error: {e}", file=sys.stderr)
         return []
@@ -333,8 +346,7 @@ def cmd_fetch(args, cfg: dict):
     sources = {k: v for k, v in sources.items() if not k.startswith("_")}
 
     if not sources:
-        print("[ERROR] No sources configured. Run setup.py or check your config.", file=sys.stderr)
-        sys.exit(1)
+        raise VeilleConfigError("No sources configured. Run setup.py or check your config.")
 
     seen_store  = SeenStore(SEEN_URL_FILE, ttl_days=cfg.get("seen_url_ttl_days", 14))
     topic_store = TopicStore(TOPIC_SEEN_FILE, ttl_days=cfg.get("topic_ttl_days", 5))
@@ -359,7 +371,8 @@ def cmd_fetch(args, cfg: dict):
 
     # Filter topic duplicates
     if args.filter_topic:
-        all_articles, skipped_topic = deduplicate_articles(all_articles, topic_store)
+        threshold = cfg.get("topic_similarity_threshold", 0.40)
+        all_articles, skipped_topic = deduplicate_articles(all_articles, topic_store, threshold)
 
     # Mark seen (both stores) after filtering
     if args.filter_seen:
@@ -404,14 +417,13 @@ def cmd_send(args, cfg: dict):
     try:
         data = json.loads(sys.stdin.read())
     except json.JSONDecodeError as e:
-        print(f"[send] invalid JSON on stdin: {e}", file=sys.stderr)
-        sys.exit(1)
+        raise VeilleError(f"Invalid JSON on stdin: {e}")
 
     results = _dispatch(data, cfg, profile=getattr(args, "profile", None))
     print(json.dumps({"dispatched": results}, ensure_ascii=False, indent=2))
 
     if results.get("fail"):
-        sys.exit(1)
+        raise VeilleError(f"Dispatch failed: {results['fail']}")
 
 
 def cmd_config(_args, cfg: dict):
