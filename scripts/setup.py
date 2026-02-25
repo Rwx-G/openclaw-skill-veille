@@ -6,12 +6,13 @@ Modes :
   python3 setup.py                   # wizard initial (creation config + dirs)
   python3 setup.py --manage-sources  # gestion interactive des sources RSS
   python3 setup.py --manage-outputs  # gestion interactive des sorties (dispatch)
+  python3 setup.py --setup-cron      # configure le cron job quotidien (ecrit cron.json)
   python3 setup.py --non-interactive
 
 Actions du wizard initial :
   1. Cree ~/.openclaw/config/veille/ et ~/.openclaw/data/veille/
   2. Copie config.example.json -> config.json si absent
-  3. Propose hours_lookback et max_articles_per_source
+  3. Propose hours_lookback, max_articles_per_source, language, timezone
 
 Actions du menu sources :
   - Affiche toutes les sources disponibles (actives + desactivees)
@@ -22,6 +23,11 @@ Actions du menu outputs :
   - Affiche les sorties configurees (telegram_bot, mail-client, nextcloud, file)
   - Permet d'activer/desactiver, ajouter ou supprimer des sorties
   - Sauvegarde le config.json mis a jour
+
+Actions du wizard cron :
+  - Demande heure/frequence, modele LLM, chat_id Telegram
+  - Ecrit cron.json dans le repertoire du skill (gitignore)
+  - L agent lit cron.json + references/cron_prompt.md et cree le cron OpenClaw
 """
 
 import argparse
@@ -361,6 +367,111 @@ def run_manage_sources():
     print()
 
 
+# ---- Cron setup -------------------------------------------------------------
+
+CRON_FILE         = SKILL_DIR / "cron.json"
+CRON_EXAMPLE_FILE = SKILL_DIR / "cron.example.json"
+
+_CRON_FREQUENCIES = {
+    "1": ("daily",   "0 7 * * *"),
+    "2": ("twice",   "0 7,19 * * *"),
+    "3": ("hourly",  "0 * * * *"),
+    "4": ("custom",  ""),
+}
+
+_CRON_MODELS = {
+    "1": "anthropic/claude-haiku-4-5",
+    "2": "anthropic/claude-sonnet-4-5",
+    "3": "openai/gpt-4o-mini",
+}
+
+
+def run_setup_cron(interactive: bool = True):
+    """Wizard de configuration du cron job quotidien."""
+    print()
+    print("=" * 52)
+    print("  Veille - Configuration du cron job")
+    print("=" * 52)
+    print()
+    print("  Ce wizard cree cron.json dans le repertoire du skill.")
+    print("  L agent lit ensuite ce fichier pour creer le cron OpenClaw.")
+    print()
+
+    example = _load_json(CRON_EXAMPLE_FILE) if CRON_EXAMPLE_FILE.exists() else {}
+    existing = _load_json(CRON_FILE) if CRON_FILE.exists() else {}
+    cfg = dict(example)
+    cfg.update(existing)
+
+    # Name
+    default_name = cfg.get("name", "veille-daily")
+    cfg["name"] = _ask("  Nom du cron job", default_name, interactive)
+
+    # Frequency
+    print()
+    print("  Frequence :")
+    print("    1. Quotidien  (0 7 * * *)")
+    print("    2. Deux fois  (0 7,19 * * *)")
+    print("    3. Toutes les heures")
+    print("    4. Expression cron personnalisee")
+    freq_choice = _ask("  Choix", "1", interactive)
+    label, default_expr = _CRON_FREQUENCIES.get(freq_choice, ("daily", "0 7 * * *"))
+    if label == "custom":
+        default_expr = cfg.get("schedule_cron", "0 7 * * *")
+    if label == "daily":
+        hour = _ask("  Heure (0-23)", "7", interactive)
+        try:
+            h = int(hour)
+            default_expr = f"0 {h} * * *"
+        except ValueError:
+            default_expr = "0 7 * * *"
+    cfg["schedule_cron"] = _ask("  Expression cron", default_expr, interactive) if label == "custom" else default_expr
+
+    # Timezone
+    tz_default = cfg.get("timezone", "Europe/Paris")
+    cfg["timezone"] = _ask("  Timezone", tz_default, interactive)
+
+    # Model
+    print()
+    print("  Modele LLM :")
+    for k, v in _CRON_MODELS.items():
+        print(f"    {k}. {v}")
+    model_choice = _ask("  Choix", "1", interactive)
+    cfg["model"] = _CRON_MODELS.get(model_choice, _CRON_MODELS["1"])
+
+    # Timeout
+    default_timeout = str(cfg.get("timeout_seconds", 180))
+    t = _ask("  Timeout (secondes)", default_timeout, interactive)
+    try:
+        cfg["timeout_seconds"] = int(t)
+    except ValueError:
+        cfg["timeout_seconds"] = 180
+
+    # Fetch args
+    default_fetch = cfg.get("fetch_args", "--hours 24 --filter-seen --filter-topic")
+    cfg["fetch_args"] = _ask("  Arguments fetch", default_fetch, interactive)
+
+    # Telegram chat_id
+    default_chat = cfg.get("telegram_chat_id", "")
+    cfg["telegram_chat_id"] = _ask("  Telegram chat_id (laisser vide si non configure)", default_chat, interactive)
+
+    cfg["enabled"] = True
+
+    # Write cron.json
+    _save_json(CRON_FILE, cfg)
+
+    print()
+    print("=" * 52)
+    print("  cron.json cree.")
+    print()
+    print(f"  Fichier : {CRON_FILE}")
+    print()
+    print("  Prochaine etape : demander a l agent de lire cron.json")
+    print("  et references/cron_prompt.md pour creer le cron OpenClaw.")
+    print("  Commande : 'configure le cron veille depuis cron.json'")
+    print("=" * 52)
+    print()
+
+
 # ---- Output management ------------------------------------------------------
 
 _OUTPUT_TYPES = {
@@ -567,6 +678,8 @@ def main():
                         help="Gestion interactive des sources RSS (activer/desactiver)")
     parser.add_argument("--manage-outputs", action="store_true",
                         help="Gestion interactive des sorties (telegram, mail, nextcloud, file)")
+    parser.add_argument("--setup-cron", action="store_true",
+                        help="Configure le cron job quotidien (ecrit cron.json)")
     parser.add_argument("--non-interactive", action="store_true",
                         help="Utilise les valeurs par defaut sans prompts")
     args = parser.parse_args()
@@ -575,6 +688,8 @@ def main():
         run_manage_sources()
     elif args.manage_outputs:
         run_manage_outputs()
+    elif args.setup_cron:
+        run_setup_cron(interactive=not args.non_interactive)
     else:
         run_setup(interactive=not args.non_interactive)
 
