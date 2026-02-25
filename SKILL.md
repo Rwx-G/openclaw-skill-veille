@@ -7,7 +7,6 @@ metadata:
   {
     "openclaw": {
       "emoji": "📡",
-      "requires": { "env": [] },
       "suggests": ["mail-client", "nextcloud-files"]
     }
   }
