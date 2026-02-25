@@ -153,5 +153,60 @@
     "Arret sur Images":      "https://www.arretsurimages.net/rss",
     "Konbini":               "https://www.konbini.com/fr/feed/",
     "Canard PC":             "https://www.canardpc.com/feed"
+  },
+
+  "_comment_outputs": "Output dispatch configuration - remove _comment_ prefix to activate",
+
+  "outputs": [],
+
+  "_comment_outputs_doc": {
+    "telegram_bot": {
+      "type": "telegram_bot",
+      "chat_id": "YOUR_CHAT_ID",
+      "content": "recap",
+      "enabled": false,
+      "_note": "bot_token auto-read from OpenClaw config (channels.telegram.botToken). Set chat_id to your Telegram user/chat ID."
+    },
+    "mail-client": {
+      "type": "mail-client",
+      "mail_to": "you@example.com",
+      "subject": "Veille tech - {date}",
+      "content": "full_digest",
+      "enabled": false,
+      "_note": "Delegates to mail-client skill if installed. Fallback: set smtp_host/smtp_port/smtp_user/smtp_pass/mail_from here."
+    },
+    "mail-smtp-fallback": {
+      "type": "mail-client",
+      "mail_to": "you@example.com",
+      "smtp_host": "mail.example.com",
+      "smtp_port": 587,
+      "smtp_user": "sender@example.com",
+      "smtp_pass": "YOUR_APP_PASSWORD",
+      "mail_from": "sender@example.com",
+      "content": "full_digest",
+      "enabled": false
+    },
+    "nextcloud": {
+      "type": "nextcloud",
+      "path": "/YourFolder/veille.md",
+      "content": "full_digest",
+      "enabled": false,
+      "_note": "Delegates to nextcloud skill. Skill must be installed and configured."
+    },
+    "file": {
+      "type": "file",
+      "path": "~/veille-digest.md",
+      "content": "full_digest",
+      "enabled": false
+    }
+  },
+
+  "_comment_profiles_doc": "Named output profiles - call with: veille.py send --profile NAME",
+  "profiles": {
+    "example-daily": [
+      { "type": "telegram_bot", "chat_id": "YOUR_CHAT_ID", "content": "recap",       "enabled": false },
+      { "type": "mail-client",  "mail_to": "you@example.com", "content": "full_digest", "enabled": false },
+      { "type": "nextcloud",    "path": "/YourFolder/veille.md", "content": "full_digest", "enabled": false }
+    ]
   }
 }

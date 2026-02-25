@@ -35,6 +35,7 @@ CONFIG_FILE = _CONFIG_DIR / "config.json"
 sys.path.insert(0, str(Path(__file__).parent))
 from seen_store import SeenStore, SEEN_URL_FILE
 from topic_filter import TopicStore, deduplicate_articles, TOPIC_SEEN_FILE
+from dispatch import dispatch as _dispatch
 
 # ---- Default config ---------------------------------------------------------
 
@@ -398,6 +399,21 @@ def cmd_mark_seen(args, cfg: dict):
     print(json.dumps({"marked": urls, "count": len(urls)}))
 
 
+def cmd_send(args, cfg: dict):
+    """Read digest JSON from stdin and dispatch to configured outputs."""
+    try:
+        data = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as e:
+        print(f"[send] invalid JSON on stdin: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    results = _dispatch(data, cfg, profile=getattr(args, "profile", None))
+    print(json.dumps({"dispatched": results}, ensure_ascii=False, indent=2))
+
+    if results.get("fail"):
+        sys.exit(1)
+
+
 def cmd_config(_args, cfg: dict):
     """Affiche la config active sans secrets (pas de credentials ici)."""
     print(json.dumps(cfg, indent=2, ensure_ascii=False))
@@ -430,6 +446,10 @@ def main():
     p_mark = sub.add_parser("mark-seen", help="Mark URLs as seen manually")
     p_mark.add_argument("urls", nargs="+", help="URLs to mark as seen")
 
+    # send (dispatch stdin JSON to configured outputs)
+    p_send = sub.add_parser("send", help="Dispatch digest JSON (stdin) to configured outputs")
+    p_send.add_argument("--profile", default=None, help="Named output profile from config")
+
     # config
     sub.add_parser("config", help="Show active configuration")
 
@@ -451,6 +471,8 @@ def main():
         cmd_topic_stats(args, cfg)
     elif args.command == "mark-seen":
         cmd_mark_seen(args, cfg)
+    elif args.command == "send":
+        cmd_send(args, cfg)
     elif args.command == "config":
         cmd_config(args, cfg)
     else:

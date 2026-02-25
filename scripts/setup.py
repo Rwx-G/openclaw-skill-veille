@@ -3,8 +3,9 @@
 setup.py - Wizard interactif d'initialisation et de gestion du skill veille.
 
 Modes :
-  python3 setup.py                  # wizard initial (creation config + dirs)
-  python3 setup.py --manage-sources # gestion interactive des sources RSS
+  python3 setup.py                   # wizard initial (creation config + dirs)
+  python3 setup.py --manage-sources  # gestion interactive des sources RSS
+  python3 setup.py --manage-outputs  # gestion interactive des sorties (dispatch)
   python3 setup.py --non-interactive
 
 Actions du wizard initial :
@@ -15,6 +16,11 @@ Actions du wizard initial :
 Actions du menu sources :
   - Affiche toutes les sources disponibles (actives + desactivees)
   - Permet de basculer chaque source entre active et desactivee
+  - Sauvegarde le config.json mis a jour
+
+Actions du menu outputs :
+  - Affiche les sorties configurees (telegram_bot, mail-client, nextcloud, file)
+  - Permet d'activer/desactiver, ajouter ou supprimer des sorties
   - Sauvegarde le config.json mis a jour
 """
 
@@ -335,6 +341,203 @@ def run_manage_sources():
     print()
 
 
+# ---- Output management ------------------------------------------------------
+
+_OUTPUT_TYPES = {
+    "1": "telegram_bot",
+    "2": "mail-client",
+    "3": "nextcloud",
+    "4": "file",
+}
+
+_OUTPUT_DEFAULTS = {
+    "telegram_bot": {
+        "type": "telegram_bot",
+        "chat_id": "",
+        "content": "recap",
+        "enabled": True,
+    },
+    "mail-client": {
+        "type": "mail-client",
+        "mail_to": "",
+        "subject": "Veille tech",
+        "content": "full_digest",
+        "enabled": True,
+    },
+    "nextcloud": {
+        "type": "nextcloud",
+        "path": "/Jarvis/veille-tech.md",
+        "content": "full_digest",
+        "enabled": True,
+    },
+    "file": {
+        "type": "file",
+        "path": "~/veille-digest.md",
+        "content": "full_digest",
+        "enabled": True,
+    },
+}
+
+_OUTPUT_REQUIRED_FIELDS = {
+    "telegram_bot": [("chat_id", "Telegram chat_id (your user or group ID)", "")],
+    "mail-client":  [("mail_to", "Recipient email", "")],
+    "nextcloud":    [("path", "Nextcloud path", "/Jarvis/veille-tech.md")],
+    "file":         [("path", "Local file path", "~/veille-digest.md")],
+}
+
+_CONTENT_TYPES = {"1": "recap", "2": "full_digest"}
+
+
+def _display_outputs(outputs: list):
+    if not outputs:
+        print("  (no outputs configured)")
+        return
+    for i, out in enumerate(outputs):
+        status = "[ON] " if out.get("enabled", True) else "[off]"
+        t = out.get("type", "?")
+        details = []
+        for k in ("chat_id", "mail_to", "path"):
+            if k in out:
+                details.append(f"{k}={out[k]}")
+        content = out.get("content", "full_digest")
+        details.append(f"content={content}")
+        print(f"  {i + 1}. {status} {t}  ({', '.join(details)})")
+
+
+def run_manage_outputs():
+    """Menu interactif de gestion des sorties (dispatch)."""
+    print()
+    print("=" * 52)
+    print("  Veille - Gestion des sorties (dispatch)")
+    print("=" * 52)
+
+    if not CONFIG_FILE.exists():
+        print(f"\n[WARN] {CONFIG_FILE} not found. Run setup.py first.", file=sys.stderr)
+        sys.exit(1)
+
+    user_cfg = _load_json(CONFIG_FILE)
+    outputs: list = user_cfg.get("outputs", [])
+
+    print("\n  Types disponibles :")
+    for k, v in _OUTPUT_TYPES.items():
+        print(f"    {k}. {v}")
+    print()
+    print("  Commandes : t <n> = toggle, a = add, d <n> = delete, q = save & quit")
+
+    while True:
+        print()
+        print("  Sorties configurees :")
+        _display_outputs(outputs)
+        print()
+
+        try:
+            raw = input("  Action (t/a/d/q) : ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raw = "q"
+
+        if not raw:
+            continue
+
+        parts = raw.split()
+        cmd = parts[0].lower()
+
+        if cmd == "q":
+            break
+
+        elif cmd == "t":
+            # Toggle enable/disable
+            if len(parts) < 2:
+                print("  Usage: t <numero>")
+                continue
+            try:
+                idx = int(parts[1]) - 1
+                if 0 <= idx < len(outputs):
+                    outputs[idx]["enabled"] = not outputs[idx].get("enabled", True)
+                    status = "ON" if outputs[idx]["enabled"] else "off"
+                    print(f"  -> {outputs[idx]['type']}: {status}")
+                else:
+                    print(f"  Numero hors plage (1-{len(outputs)})")
+            except ValueError:
+                print("  Numero invalide")
+
+        elif cmd == "a":
+            # Add new output
+            print("  Type de sortie :")
+            for k, v in _OUTPUT_TYPES.items():
+                print(f"    {k}. {v}")
+            try:
+                choice = input("  Choix (1-4) : ").strip()
+            except (EOFError, KeyboardInterrupt):
+                continue
+            out_type = _OUTPUT_TYPES.get(choice)
+            if not out_type:
+                print("  Choix invalide")
+                continue
+
+            new_out = dict(_OUTPUT_DEFAULTS[out_type])
+
+            # Prompt for required fields
+            for field, label, default in _OUTPUT_REQUIRED_FIELDS.get(out_type, []):
+                try:
+                    val = input(f"  {label} [{default}] : ").strip()
+                    new_out[field] = val if val else default
+                except (EOFError, KeyboardInterrupt):
+                    new_out[field] = default
+
+            # Content type
+            print("  Contenu : 1. recap (court)  2. full_digest (complet)")
+            try:
+                ct = input("  Choix [2] : ").strip()
+                new_out["content"] = _CONTENT_TYPES.get(ct, "full_digest")
+            except (EOFError, KeyboardInterrupt):
+                new_out["content"] = "full_digest"
+
+            # telegram_bot: warn if no token
+            if out_type == "telegram_bot":
+                oc_cfg_path = Path.home() / ".openclaw" / "openclaw.json"
+                if oc_cfg_path.exists():
+                    try:
+                        oc = json.loads(oc_cfg_path.read_text(encoding="utf-8"))
+                        token = oc.get("channels", {}).get("telegram", {}).get("botToken", "")
+                        if token:
+                            print("  OK: bot_token auto-detected from OpenClaw config")
+                        else:
+                            print("  WARN: no bot_token in OpenClaw config (channels.telegram.botToken)")
+                    except Exception:
+                        pass
+                else:
+                    print("  WARN: OpenClaw config not found - bot_token will need manual config")
+
+            outputs.append(new_out)
+            print(f"  -> Added: {out_type}")
+
+        elif cmd == "d":
+            # Delete output
+            if len(parts) < 2:
+                print("  Usage: d <numero>")
+                continue
+            try:
+                idx = int(parts[1]) - 1
+                if 0 <= idx < len(outputs):
+                    removed = outputs.pop(idx)
+                    print(f"  -> Removed: {removed.get('type','?')}")
+                else:
+                    print(f"  Numero hors plage (1-{len(outputs)})")
+            except ValueError:
+                print("  Numero invalide")
+
+        else:
+            print("  Commandes : t <n>=toggle, a=add, d <n>=delete, q=save&quit")
+
+    # Save
+    user_cfg["outputs"] = outputs
+    _save_json(CONFIG_FILE, user_cfg)
+    print()
+    print(f"  Sauvegarde : {len(outputs)} sortie(s) -> {CONFIG_FILE}")
+    print()
+
+
 # ---- Main -------------------------------------------------------------------
 
 
@@ -342,12 +545,16 @@ def main():
     parser = argparse.ArgumentParser(description="OpenClaw veille - setup wizard")
     parser.add_argument("--manage-sources", action="store_true",
                         help="Gestion interactive des sources RSS (activer/desactiver)")
+    parser.add_argument("--manage-outputs", action="store_true",
+                        help="Gestion interactive des sorties (telegram, mail, nextcloud, file)")
     parser.add_argument("--non-interactive", action="store_true",
                         help="Utilise les valeurs par defaut sans prompts")
     args = parser.parse_args()
 
     if args.manage_sources:
         run_manage_sources()
+    elif args.manage_outputs:
+        run_manage_outputs()
     else:
         run_setup(interactive=not args.non_interactive)
 
