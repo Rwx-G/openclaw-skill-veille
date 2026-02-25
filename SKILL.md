@@ -1,18 +1,20 @@
 ---
 name: veille
-description: "RSS feed aggregator and deduplication engine for OpenClaw agents. Use when: fetching recent articles from configured news sources, filtering already-seen articles, deduplicating articles covering the same topic. NOT for: sending emails (use mail-client), saving to Nextcloud (use nextcloud-files), LLM scoring (handled by the agent)."
+description: "RSS feed aggregator, deduplication engine, and output dispatcher for OpenClaw agents. Use when: fetching recent articles from configured sources, filtering already-seen URLs, deduplicating by topic, dispatching digests to Telegram/email/Nextcloud/file. Enhanced by mail-client (email output) and nextcloud-files (cloud storage). NOT for: LLM scoring (handled by the agent)."
 homepage: https://github.com/Rwx-G/openclaw-skill-veille
 compatibility: Python 3.9+ - no external dependencies (stdlib only) - network access to RSS feeds
 metadata:
   {
     "openclaw": {
-      "emoji": "📰",
-      "requires": { "env": [] }
+      "emoji": "📡",
+      "requires": { "env": [] },
+      "suggests": ["mail-client", "nextcloud-files"]
     }
   }
 ontology:
   reads: [rss_feeds]
   writes: [local_data_files]
+  enhancedBy: [mail-client, nextcloud-files]
 ---
 
 # Skill Veille - RSS Aggregator
@@ -157,6 +159,25 @@ python3 veille.py mark-seen URL [URL ...]
 ```
 
 Marks one or more URLs as already seen (prevents them from appearing in future fetches with `--filter-seen`).
+
+### `send`
+
+```
+python3 veille.py send [--profile NAME]
+```
+
+Reads a digest JSON from stdin and dispatches to all enabled outputs configured in `config.json`.
+Accepts both raw fetch output (`articles` key) and LLM-processed digests (`categories` key).
+
+Output types: `telegram_bot`, `mail-client`, `nextcloud`, `file`.
+- `telegram_bot`: bot token auto-read from OpenClaw config - no extra setup if Telegram already configured.
+- `mail-client`: delegates to mail-client skill if installed, falls back to raw SMTP config.
+- `nextcloud`: delegates to nextcloud-files skill if installed.
+
+Configure outputs interactively:
+```bash
+python3 scripts/setup.py --manage-outputs
+```
 
 ### `config`
 
