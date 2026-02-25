@@ -253,12 +253,16 @@ The `llm` key in `config.json` controls the optional LLM-based article scoring:
 |-----|---------|-------------|
 | `enabled` | `false` | Enable LLM scoring (requires API key) |
 | `base_url` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
-| `api_key_file` | `~/.openclaw/secrets/openai_key` | Path to file containing the API key |
+| `api_key_file` | `~/.openclaw/secrets/openai_api_key` | Path to file containing the API key |
 | `model` | `gpt-4o-mini` | Model to use for scoring |
 | `top_n` | `10` | Max articles to send to LLM per batch |
 | `ghost_threshold` | `5` | Score threshold for `ghost_picks` (blog-worthy articles) |
 
 Scoring rules:
+- Only the first `top_n` articles are sent to the LLM. Articles beyond `top_n`
+  are excluded from the digest entirely. `fetch` returns articles sorted by date
+  desc, so `top_n` selects the most recent ones. Increase `top_n` to evaluate
+  more articles per run (higher token cost).
 - Score >= `ghost_threshold` : added to `ghost_picks` list
 - Score >= 3 : kept in `articles` list
 - Score <= 2 : excluded from output

@@ -15,7 +15,7 @@ Config key "llm" in ~/.openclaw/config/veille/config.json:
     "llm": {
       "enabled": false,
       "base_url": "https://api.openai.com/v1",
-      "api_key_file": "~/.openclaw/secrets/openai_key",
+      "api_key_file": "~/.openclaw/secrets/openai_api_key",
       "model": "gpt-4o-mini",
       "top_n": 10,
       "ghost_threshold": 5
@@ -41,7 +41,7 @@ _DEFAULT_CONFIG_FILE = _CONFIG_DIR / "config.json"
 _DEFAULT_LLM_CONFIG = {
     "enabled": False,
     "base_url": "https://api.openai.com/v1",
-    "api_key_file": "~/.openclaw/secrets/openai_key",
+    "api_key_file": "~/.openclaw/secrets/openai_api_key",
     "model": "gpt-4o-mini",
     "top_n": 10,
     "ghost_threshold": 5,
@@ -76,24 +76,29 @@ _SECURITY_NOTICE = (
 )
 
 _SCORING_PROMPT_TEMPLATE = (
-    "Tu es un assistant de veille technologique pour un ingenieur sysops/DevOps.\n"
-    "Profil : securite defensive, infrastructure Linux, DevOps, auto-hebergement, vie privee.\n"
-    "Langue de reponse : francais.\n\n"
-    "Voici {count} articles publies dans les dernieres {hours}h :\n\n"
+    "Tu es un assistant de veille technologique pour un ingénieur sysops/DevOps.\n"
+    "Profil : sécurité défensive, infrastructure Linux, DevOps, auto-hébergement, vie privée.\n"
+    "Langue de réponse : français.\n\n"
+    "Voici {count} articles publiés dans les dernières {hours}h :\n\n"
     "{articles_block}\n\n"
-    "Attribue un score de pertinence de 1 a 5 a chaque article pour ce profil.\n"
-    "Score 5 = article exceptionnel, tres pertinent, potentiel pour un article de blog technique.\n"
+    "Attribue un score de pertinence de 1 à 5 à chaque article pour ce profil.\n"
+    "Score 5 = article exceptionnel, très pertinent, potentiel pour un article de blog technique.\n"
     "Score 1 = hors sujet.\n\n"
-    "Reponds UNIQUEMENT en JSON :\n"
+    "Réponds UNIQUEMENT en JSON :\n"
     "[\n"
-    '  {{"index": 0, "score": 4, "reason": "phrase en francais"}},\n'
+    '  {{"index": 0, "score": 4, "reason": "phrase en français"}},\n'
     "  ...\n"
     "]\n"
 )
 
 
 def _build_prompt(articles: list, hours: int, top_n: int) -> str:
-    """Build the scoring prompt with anti-injection wrappers."""
+    """Build the scoring prompt with anti-injection wrappers.
+
+    Only the first top_n articles (sorted by date desc from fetch) are sent
+    to the LLM. Articles beyond top_n are silently excluded from the digest.
+    Adjust top_n in config to control how many articles are evaluated.
+    """
     subset = articles[:top_n]
 
     blocks = []
@@ -174,6 +179,16 @@ def score_articles(data: dict, cfg: dict) -> dict:
 
     Returns:
         Enriched dict with scored articles, ghost_picks, and "scored" flag.
+
+    Notes:
+        - Only articles[:top_n] are sent to the LLM (default: 10).
+          Articles beyond top_n are excluded from the digest entirely.
+          fetch returns articles sorted by date desc, so top_n selects the
+          most recent ones. Increase top_n in config to evaluate more articles.
+        - Articles with score < 3 are excluded from the output even if scored.
+        - ghost_picks = articles with score >= ghost_threshold (default: 5).
+        - If llm.enabled is false or the API call fails, articles pass through
+          unmodified (scored=False) with no reason field populated.
     """
     llm_cfg = _load_llm_config(cfg)
     articles = data.get("articles", [])
