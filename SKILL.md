@@ -1,6 +1,6 @@
 ---
 name: veille
-description: "RSS feed aggregator, deduplication engine, and output dispatcher for OpenClaw agents. Use when: fetching recent articles from configured sources, filtering already-seen URLs, deduplicating by topic, dispatching digests to Telegram/email/Nextcloud/file. Enhanced by mail-client (email output) and nextcloud-files (cloud storage). NOT for: LLM scoring (handled by the agent)."
+description: "RSS feed aggregator, deduplication engine, LLM scoring, and output dispatcher for OpenClaw agents. Use when: fetching recent articles from configured sources, filtering already-seen URLs, deduplicating by topic, scoring with LLM, dispatching digests to Telegram/email/Nextcloud/file. Enhanced by mail-client (email output) and nextcloud-files (cloud storage)."
 homepage: https://github.com/Rwx-G/openclaw-skill-veille
 compatibility: Python 3.9+ - no external dependencies (stdlib only) - network access to RSS feeds
 metadata:
@@ -48,8 +48,10 @@ python3 scripts/setup.py
 # 2. Validate
 python3 scripts/init.py
 
-# 3. Fetch
-python3 scripts/veille.py fetch --hours 24 --filter-seen --filter-topic
+# 3. Fetch + Score + Send (full pipeline)
+python3 scripts/veille.py fetch --filter-seen --filter-topic \
+  | python3 scripts/veille.py score \
+  | python3 scripts/veille.py send
 ```
 
 ---
@@ -182,6 +184,25 @@ python3 veille.py mark-seen URL [URL ...]
 
 Marks one or more URLs as already seen (prevents them from appearing in future fetches with `--filter-seen`).
 
+### `score`
+
+```
+python3 veille.py score [--dry-run]
+```
+
+Reads a digest JSON from stdin (output of `fetch`) and scores articles using an OpenAI-compatible LLM.
+Returns enriched JSON with `scored`, `ghost_picks`, and per-article `score`/`reason` fields.
+
+Options:
+- `--dry-run` : print summary on stderr without calling the LLM API
+
+When `llm.enabled` is `false` (default), articles pass through unchanged (`"scored": false`).
+
+Pipeline usage:
+```bash
+python3 veille.py fetch --filter-seen --filter-topic | python3 veille.py score | python3 veille.py send
+```
+
 ### `send`
 
 ```
@@ -194,7 +215,7 @@ Accepts both raw fetch output (`articles` key) and LLM-processed digests (`categ
 Output types: `telegram_bot`, `mail-client`, `nextcloud`, `file`.
 - `telegram_bot`: bot token auto-read from OpenClaw config - no extra setup if Telegram already configured.
 - `mail-client`: delegates to mail-client skill if installed, falls back to raw SMTP config.
-- `nextcloud`: delegates to nextcloud-files skill if installed.
+- `nextcloud`: delegates to nextcloud-files skill if installed (append mode by default with date separator).
 
 Configure outputs interactively:
 ```bash
@@ -208,6 +229,52 @@ python3 veille.py config
 ```
 
 Prints the active configuration (no secrets).
+
+---
+
+## LLM scoring configuration
+
+The `llm` key in `config.json` controls the optional LLM-based article scoring:
+
+```json
+{
+  "llm": {
+    "enabled": false,
+    "base_url": "https://api.openai.com/v1",
+    "api_key_file": "~/.openclaw/secrets/openai_key",
+    "model": "gpt-4o-mini",
+    "top_n": 10,
+    "ghost_threshold": 5
+  }
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable LLM scoring (requires API key) |
+| `base_url` | `https://api.openai.com/v1` | OpenAI-compatible API endpoint |
+| `api_key_file` | `~/.openclaw/secrets/openai_key` | Path to file containing the API key |
+| `model` | `gpt-4o-mini` | Model to use for scoring |
+| `top_n` | `10` | Max articles to send to LLM per batch |
+| `ghost_threshold` | `5` | Score threshold for `ghost_picks` (blog-worthy articles) |
+
+Scoring rules:
+- Score >= `ghost_threshold` : added to `ghost_picks` list
+- Score >= 3 : kept in `articles` list
+- Score <= 2 : excluded from output
+- Articles are sorted by score (descending)
+
+When disabled, the `score` subcommand passes data through unchanged.
+
+## Nextcloud output mode
+
+The nextcloud output now defaults to **append mode** with a date separator. Each dispatch adds content below a `## YYYY-MM-DD HH:MM` header, preserving previous entries.
+
+Set `"mode": "overwrite"` in the output config to restore the old behavior:
+
+```json
+{ "type": "nextcloud", "path": "/Veille/digest.md", "mode": "overwrite" }
+```
 
 ---
 
@@ -238,10 +305,18 @@ Please summarize the 5 most important stories, focusing on security and tech.
 
 ```
 1. Call veille fetch --filter-seen --filter-topic
-2. If count > 0: pass wrapped_listing to LLM for analysis
-3. LLM produces digest summary
-4. Optionally: send digest via mail-client skill
-5. Optionally: save to Nextcloud via nextcloud-files skill
+2. Pipe through veille score (LLM scoring, if enabled)
+3. If count > 0: pass wrapped_listing to LLM for analysis
+4. LLM produces digest summary
+5. Pipe through veille send (dispatches to configured outputs)
+```
+
+### Pipeline (CLI)
+
+```bash
+python3 scripts/veille.py fetch --filter-seen --filter-topic \
+  | python3 scripts/veille.py score \
+  | python3 scripts/veille.py send
 ```
 
 ### Filtering by keyword (post-fetch)

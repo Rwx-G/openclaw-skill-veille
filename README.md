@@ -38,6 +38,11 @@ No credentials required. All sources are public RSS/Atom feeds.
 # Fetch last 24h, full dedup
 python3 scripts/veille.py fetch --hours 24 --filter-seen --filter-topic
 
+# Full pipeline: fetch + LLM score + dispatch
+python3 scripts/veille.py fetch --filter-seen --filter-topic \
+  | python3 scripts/veille.py score \
+  | python3 scripts/veille.py send
+
 # First run (no dedup, just baseline)
 python3 scripts/veille.py fetch --hours 24
 
@@ -54,7 +59,8 @@ python3 scripts/veille.py fetch --hours 12
 | URL dedup | TTL-based store (14 days) - never show the same article twice |
 | Topic dedup | Jaccard similarity + named entities (CVEs, proper nouns) |
 | Source tiers | T1 (CERT-FR, BleepingComputer, Krebs...) beat T2/T3 on topic conflicts |
-| Scoring | 1-5 relevance score per article |
+| LLM scoring | Optional OpenAI-compatible scoring (1-5), configurable via `llm` config key |
+| Ghost picks | Articles scoring >= threshold flagged as blog-worthy (`ghost_picks`) |
 | LLM output | `wrapped_listing` wraps external content with untrusted-content markers |
 | Stats | `seen-stats`, `topic-stats` sub-commands |
 
@@ -63,6 +69,12 @@ python3 scripts/veille.py fetch --hours 12
 ```bash
 # Fetch articles
 python3 scripts/veille.py fetch [--hours N] [--filter-seen] [--filter-topic]
+
+# Score articles with LLM (stdin from fetch, passthrough if disabled)
+python3 scripts/veille.py score [--dry-run]
+
+# Dispatch to configured outputs (stdin from fetch or score)
+python3 scripts/veille.py send [--profile NAME]
 
 # Deduplication stats
 python3 scripts/veille.py seen-stats
@@ -125,6 +137,27 @@ Config file: `~/.openclaw/config/veille/config.json` (created by `setup.py`, sur
 
 To enable a disabled source: move it from `sources_disabled` to `sources`, or run `setup.py --manage-sources`.
 
+### LLM scoring (optional)
+
+```json
+{
+  "llm": {
+    "enabled": false,
+    "base_url": "https://api.openai.com/v1",
+    "api_key_file": "~/.openclaw/secrets/openai_key",
+    "model": "gpt-4o-mini",
+    "top_n": 10,
+    "ghost_threshold": 5
+  }
+}
+```
+
+When enabled, `veille.py score` calls the configured LLM to score articles 1-5. Articles scoring >= 3 are kept, >= `ghost_threshold` go to `ghost_picks`. API key is read from `api_key_file` (never stored in config). When disabled, `score` passes data through unchanged.
+
+### Nextcloud output mode
+
+The nextcloud output defaults to **append** mode: each dispatch adds a date-separated section. Set `"mode": "overwrite"` to replace the file each time.
+
 ## Included sources (examples)
 
 | Category | Active by default | Opt-in (disabled) |
@@ -149,7 +182,9 @@ openclaw-skill-veille/
   references/
     troubleshooting.md
   scripts/
-    veille.py                # Main CLI
+    veille.py                # Main CLI (fetch, score, send, seen-stats, etc.)
+    scorer.py                # LLM scoring module (OpenAI-compatible)
+    dispatch.py              # Output dispatcher (Telegram, email, Nextcloud, file)
     seen_store.py            # URL deduplication (TTL-based)
     topic_filter.py          # Topic deduplication (Jaccard + named entities)
     setup.py                 # Interactive setup wizard

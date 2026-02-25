@@ -7,6 +7,15 @@
   "language": "fr",
   "timezone": "Europe/Paris",
 
+  "llm": {
+    "enabled": false,
+    "base_url": "https://api.openai.com/v1",
+    "api_key_file": "~/.openclaw/secrets/openai_key",
+    "model": "gpt-4o-mini",
+    "top_n": 10,
+    "ghost_threshold": 5
+  },
+
   "sources": {
     "_comment_security": "--- Securite / Vulnerabilites ---",
     "BleepingComputer":      "https://www.bleepingcomputer.com/feed/",
@@ -192,8 +201,9 @@
       "type": "nextcloud",
       "path": "/YourFolder/veille.md",
       "content": "full_digest",
+      "mode": "append",
       "enabled": false,
-      "_note": "Delegates to nextcloud skill. Skill must be installed and configured."
+      "_note": "Delegates to nextcloud skill. mode: append (default) or overwrite."
     },
     "file": {
       "type": "file",

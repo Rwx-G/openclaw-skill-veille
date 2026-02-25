@@ -484,7 +484,7 @@ def _smtp_fallback(cfg: dict, subject: str, body_plain: str, body_html: str = No
 
 
 def _out_nextcloud(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone.utc) -> bool:
-    """Write to Nextcloud via nextcloud skill CLI."""
+    """Write to Nextcloud via nextcloud skill CLI (append mode with date separator)."""
     nc_path = cfg.get("path", "")
     if not nc_path:
         print("[dispatch:nextcloud] path required", file=sys.stderr)
@@ -498,13 +498,22 @@ def _out_nextcloud(cfg: dict, data: dict, lang: str = _DEFAULT_LANG, tz=timezone
         print(f"[dispatch:nextcloud] skill not installed ({nc_script})", file=sys.stderr)
         return False
 
+    mode = cfg.get("mode", "append")
+
+    if mode == "append":
+        now = datetime.now(tz)
+        date_str = now.strftime("%Y-%m-%d %H:%M")
+        separator = f"\n\n---\n\n## {date_str}\n\n"
+        text = separator + text
+        cmd = [sys.executable, str(nc_script), "write", nc_path, "--content", text, "--append"]
+    else:
+        cmd = [sys.executable, str(nc_script), "write", nc_path, "--content", text]
+
     try:
-        r = subprocess.run(
-            [sys.executable, str(nc_script), "write", nc_path, "--content", text],
-            capture_output=True, text=True, timeout=30
-        )
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if r.returncode == 0:
-            print(f"[dispatch:nextcloud] written to {nc_path} OK", file=sys.stderr)
+            action = "appended to" if mode == "append" else "written to"
+            print(f"[dispatch:nextcloud] {action} {nc_path} OK", file=sys.stderr)
             return True
         print(f"[dispatch:nextcloud] error: {r.stderr[:200]}", file=sys.stderr)
         return False
