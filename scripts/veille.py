@@ -61,7 +61,7 @@ DEFAULT_CONFIG = {
     "llm": {
         "enabled": False,
         "base_url": "https://api.openai.com/v1",
-        "api_key_file": "~/.openclaw/secrets/openai_key",
+        "api_key_file": "~/.openclaw/secrets/openai_api_key",
         "model": "gpt-4o-mini",
         "top_n": 10,
         "ghost_threshold": 5,

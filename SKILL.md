@@ -241,7 +241,7 @@ The `llm` key in `config.json` controls the optional LLM-based article scoring:
   "llm": {
     "enabled": false,
     "base_url": "https://api.openai.com/v1",
-    "api_key_file": "~/.openclaw/secrets/openai_key",
+    "api_key_file": "~/.openclaw/secrets/openai_api_key",
     "model": "gpt-4o-mini",
     "top_n": 10,
     "ghost_threshold": 5
