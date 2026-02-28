@@ -120,6 +120,25 @@ _NS = {
 
 USER_AGENT = "Mozilla/5.0 compatible Jarvis-veille/1.0"
 
+# URL patterns that are known RSS redirect/tracking wrappers
+_RSS_REDIRECT_PATTERNS = (
+    "go.theregister.com/feed/",
+    "feedproxy.google.com/",
+    "feeds.feedburner.com/",
+    "rss.feedsportal.com/",
+)
+
+def _resolve_url(url: str) -> str:
+    """Follow redirects to get the final URL. Used for known RSS tracking wrappers."""
+    if not any(p in url for p in _RSS_REDIRECT_PATTERNS):
+        return url
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.url
+    except Exception:
+        return url
+
 
 def _text(el, *tags) -> str:
     """Cherche le premier tag dans la liste et retourne son texte."""
@@ -240,7 +259,7 @@ def _parse_rss(root: ET.Element, source_name: str, hours: int, max_articles: int
             articles.append({
                 "source":       source_name,
                 "title":        title,
-                "url":          link,
+                "url":          _resolve_url(link),
                 "summary":      summary,
                 "published":    pub_dt.strftime("%d/%m %H:%M"),
                 "published_ts": pub_dt.timestamp(),
@@ -310,7 +329,7 @@ def _parse_atom(root: ET.Element, source_name: str, hours: int, max_articles: in
             articles.append({
                 "source":       source_name,
                 "title":        title,
-                "url":          link,
+                "url":          _resolve_url(link),
                 "summary":      summary,
                 "published":    pub_dt.strftime("%d/%m %H:%M"),
                 "published_ts": pub_dt.timestamp(),
