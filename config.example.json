@@ -7,6 +7,17 @@
   "language": "fr",
   "timezone": "Europe/Paris",
 
+  "scoring_profile": "ingenieur sysops/DevOps Linux, securite defensive, infrastructure Linux, DevOps, auto-hebergement, vie privee",
+
+  "categories": [
+    {"name": "Securite et Vulnerabilites", "max": 5},
+    {"name": "Incidents et Breaches", "max": 3},
+    {"name": "SysOps / DevOps / Infra", "max": 5},
+    {"name": "Culture et Veille tech", "max": 3},
+    {"name": "Crypto et Bitcoin", "max": 4},
+    {"name": "IA et LLM", "max": 4}
+  ],
+
   "llm": {
     "enabled": false,
     "base_url": "https://api.openai.com/v1",

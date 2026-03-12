@@ -22,7 +22,10 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from urllib.parse import urlparse
 import urllib.request
+
+_MAX_STDIN_SIZE = 10 * 1024 * 1024  # 10 MB
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _retry import with_retry
@@ -57,6 +60,15 @@ DEFAULT_CONFIG = {
     "seen_url_ttl_days": 14,
     "topic_ttl_days": 5,
     "topic_similarity_threshold": 0.40,
+    "scoring_profile": "ingenieur sysops/DevOps Linux, securite defensive, infrastructure Linux, DevOps, auto-hebergement, vie privee",
+    "categories": [
+        {"name": "Securite et Vulnerabilites", "max": 5},
+        {"name": "Incidents et Breaches", "max": 3},
+        {"name": "SysOps / DevOps / Infra", "max": 5},
+        {"name": "Culture et Veille tech", "max": 3},
+        {"name": "Crypto et Bitcoin", "max": 4},
+        {"name": "IA et LLM", "max": 4},
+    ],
     "sources": {},
     "llm": {
         "enabled": False,
@@ -179,11 +191,59 @@ def _parse_date_iso(date_str: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+_PRIVATE_IP_PREFIXES = (
+    "127.", "10.", "192.168.", "0.", "169.254.",
+    "::1", "fc00:", "fd00:", "fe80:",
+)
+
+
+def _validate_feed_url(url: str) -> bool:
+    """Reject non-HTTP schemes and private/localhost targets."""
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if host in ("localhost", ""):
+        return False
+    if any(host.startswith(p) for p in _PRIVATE_IP_PREFIXES):
+        return False
+    # Reject 172.16.0.0/12
+    if host.startswith("172."):
+        parts = host.split(".")
+        if len(parts) >= 2 and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+            return False
+    return True
+
+
+def _safe_xml_parse(raw: bytes):
+    """Parse XML with basic DTD/XXE rejection (stdlib-only)."""
+    # Decode to text for reliable check regardless of encoding (UTF-8/16/32)
+    for enc in ("utf-8", "utf-16", "utf-32", "latin-1"):
+        try:
+            head_text = raw[:2048].decode(enc).lower()
+            break
+        except (UnicodeDecodeError, ValueError):
+            continue
+    else:
+        head_text = raw[:2048].decode("latin-1", errors="replace").lower()
+    if "<!doctype" in head_text or "<!entity" in head_text:
+        raise ValueError("XML contains DTD/ENTITY declarations (rejected for security)")
+    return ET.fromstring(raw)
+
+
 def fetch_feed(source_name: str, url: str, hours: int, max_articles: int) -> list:
     """
     Fetche et parse un flux RSS 2.0 ou Atom.
     Retourne une liste de dicts articles.
     """
+    if not _validate_feed_url(url):
+        print(f"[WARN] {source_name}: blocked URL (non-HTTP or private target): {url}",
+              file=sys.stderr)
+        return []
+
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
         def _do():
@@ -195,8 +255,8 @@ def fetch_feed(source_name: str, url: str, hours: int, max_articles: int) -> lis
         return []
 
     try:
-        root = ET.fromstring(raw)
-    except ET.ParseError as e:
+        root = _safe_xml_parse(raw)
+    except Exception as e:
         print(f"[WARN] {source_name}: XML parse error: {e}", file=sys.stderr)
         return []
 
@@ -440,12 +500,39 @@ def cmd_mark_seen(args, cfg: dict):
     print(json.dumps({"marked": urls, "count": len(urls)}))
 
 
+def _read_stdin_json() -> dict:
+    """Read JSON from stdin with size limit."""
+    raw = sys.stdin.read(_MAX_STDIN_SIZE + 1)
+    if len(raw) > _MAX_STDIN_SIZE:
+        raise VeilleError(f"stdin payload too large (>{_MAX_STDIN_SIZE // (1024*1024)} MB)")
+    return json.loads(raw)
+
+
 def cmd_send(args, cfg: dict):
     """Read digest JSON from stdin and dispatch to configured outputs."""
     try:
-        data = json.loads(sys.stdin.read())
+        data = _read_stdin_json()
     except json.JSONDecodeError as e:
         raise VeilleError(f"Invalid JSON on stdin: {e}")
+
+    count = data.get("count", len(data.get("articles", [])))
+    if count == 0:
+        print("[INFO] No articles to dispatch (count=0), skipping send.", file=sys.stderr)
+        print(json.dumps({"dispatched": {"skipped": "empty digest (0 articles)"}},
+                         ensure_ascii=False, indent=2))
+        return
+
+    dry_run = getattr(args, "dry_run", False)
+    if dry_run:
+        outputs = cfg.get("outputs", [])
+        profile = getattr(args, "profile", None)
+        targets = [o["type"] for o in outputs
+                   if not profile or o.get("profile") == profile]
+        print(f"[dry-run] Would dispatch {count} articles to: {', '.join(targets) or '(no outputs configured)'}",
+              file=sys.stderr)
+        print(json.dumps({"dry_run": True, "count": count, "targets": targets},
+                         ensure_ascii=False, indent=2))
+        return
 
     results = _dispatch(data, cfg, profile=getattr(args, "profile", None))
     print(json.dumps({"dispatched": results}, ensure_ascii=False, indent=2))
@@ -459,7 +546,7 @@ def cmd_score(args, cfg: dict):
     from scorer import score_articles
 
     try:
-        data = json.loads(sys.stdin.read())
+        data = _read_stdin_json()
     except json.JSONDecodeError as e:
         raise VeilleError(f"Invalid JSON on stdin: {e}")
 
@@ -510,6 +597,7 @@ def main():
     # send (dispatch stdin JSON to configured outputs)
     p_send = sub.add_parser("send", help="Dispatch digest JSON (stdin) to configured outputs")
     p_send.add_argument("--profile", default=None, help="Named output profile from config")
+    p_send.add_argument("--dry-run", action="store_true", help="Show what would be dispatched without sending")
 
     # score
     p_score = sub.add_parser("score", help="Score articles with LLM (stdin JSON from fetch)")

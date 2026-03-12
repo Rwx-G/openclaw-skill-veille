@@ -3,10 +3,11 @@
 setup.py - Wizard interactif d'initialisation et de gestion du skill veille.
 
 Modes :
-  python3 setup.py                   # wizard initial (creation config + dirs)
-  python3 setup.py --manage-sources  # gestion interactive des sources RSS
-  python3 setup.py --manage-outputs  # gestion interactive des sorties (dispatch)
-  python3 setup.py --setup-cron      # configure le cron job quotidien (ecrit cron.json)
+  python3 setup.py                      # wizard initial (creation config + dirs)
+  python3 setup.py --manage-sources     # gestion interactive des sources RSS
+  python3 setup.py --manage-categories  # profil de scoring + categories de veille
+  python3 setup.py --manage-outputs     # gestion interactive des sorties (dispatch)
+  python3 setup.py --setup-cron         # configure le cron job quotidien (ecrit cron.json)
   python3 setup.py --non-interactive
 
 Actions du wizard initial :
@@ -456,6 +457,29 @@ def run_setup_cron(interactive: bool = True):
 
     cfg["enabled"] = True
 
+    # Inject scoring profile and categories from config into the cron prompt
+    user_cfg = _load_json(CONFIG_FILE) if CONFIG_FILE.exists() else {}
+    profile = user_cfg.get("scoring_profile", _DEFAULT_PROFILE)
+    categories = user_cfg.get("categories", _DEFAULT_CATEGORIES)
+    categories_block = "\n".join(
+        f"   - {cat['name']} : max {cat['max']}" for cat in categories
+    )
+
+    # Read prompt template and inject values
+    prompt_template_file = SKILL_DIR / "references" / "cron_prompt.md"
+    if prompt_template_file.exists():
+        prompt_raw = prompt_template_file.read_text(encoding="utf-8")
+        prompt_rendered = (
+            prompt_raw
+            .replace("{{SCORING_PROFILE}}", profile)
+            .replace("{{CATEGORIES}}", categories_block)
+        )
+        cfg["_rendered_prompt_preview"] = prompt_rendered[:500] + "..."
+        cfg["scoring_profile"] = profile
+        cfg["categories"] = categories
+    else:
+        print(f"  [WARN] Prompt template not found: {prompt_template_file}", file=sys.stderr)
+
     # Write cron.json
     _save_json(CRON_FILE, cfg)
 
@@ -463,12 +487,158 @@ def run_setup_cron(interactive: bool = True):
     print("=" * 52)
     print("  cron.json cree.")
     print()
-    print(f"  Fichier : {CRON_FILE}")
+    print(f"  Fichier   : {CRON_FILE}")
+    print(f"  Profil    : {profile}")
+    print(f"  Categories: {len(categories)}")
+    for cat in categories:
+        print(f"    - {cat['name']} (max {cat['max']})")
     print()
+    print("  Pour modifier : python3 setup.py --manage-categories")
     print("  Prochaine etape : demander a l agent de lire cron.json")
     print("  et references/cron_prompt.md pour creer le cron OpenClaw.")
     print("  Commande : 'configure le cron veille depuis cron.json'")
     print("=" * 52)
+    print()
+
+
+# ---- Category / profile management ------------------------------------------
+
+_DEFAULT_PROFILE = "ingenieur sysops/DevOps Linux, securite defensive, infrastructure Linux, DevOps, auto-hebergement, vie privee"
+
+_DEFAULT_CATEGORIES = [
+    {"name": "Securite et Vulnerabilites", "max": 5},
+    {"name": "Incidents et Breaches", "max": 3},
+    {"name": "SysOps / DevOps / Infra", "max": 5},
+    {"name": "Culture et Veille tech", "max": 3},
+    {"name": "Crypto et Bitcoin", "max": 4},
+    {"name": "IA et LLM", "max": 4},
+]
+
+
+def _display_categories(categories: list):
+    if not categories:
+        print("  (aucune categorie configuree)")
+        return
+    for i, cat in enumerate(categories):
+        print(f"  {i + 1}. {cat['name']}  (max {cat['max']})")
+
+
+def run_manage_categories():
+    """Menu interactif de gestion du profil de scoring et des categories."""
+    print()
+    print("=" * 52)
+    print("  Veille - Profil de scoring et categories")
+    print("=" * 52)
+
+    if not CONFIG_FILE.exists():
+        print(f"\n[WARN] {CONFIG_FILE} not found. Run setup.py first.", file=sys.stderr)
+        sys.exit(1)
+
+    user_cfg = _load_json(CONFIG_FILE)
+    profile: str = user_cfg.get("scoring_profile", _DEFAULT_PROFILE)
+    categories: list = user_cfg.get("categories", list(_DEFAULT_CATEGORIES))
+
+    # Profile
+    print()
+    print(f"  Profil actuel : {profile}")
+    print()
+    if _confirm("  Modifier le profil de scoring ?", True):
+        new_profile = _ask("  Nouveau profil", profile, True)
+        profile = new_profile
+
+    # Categories
+    print()
+    print("  Categories actuelles :")
+    _display_categories(categories)
+    print()
+    print("  Commandes :")
+    print("    e <n>  = editer nom ou max")
+    print("    a      = ajouter une categorie")
+    print("    d <n>  = supprimer")
+    print("    r      = reset aux valeurs par defaut")
+    print("    q      = sauvegarder et quitter")
+
+    while True:
+        print()
+        _display_categories(categories)
+        print()
+
+        try:
+            raw = input("  Action (e/a/d/r/q) : ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raw = "q"
+
+        if not raw:
+            continue
+
+        parts = raw.split(maxsplit=1)
+        cmd = parts[0].lower()
+
+        if cmd == "q":
+            break
+
+        elif cmd == "r":
+            categories = list(_DEFAULT_CATEGORIES)
+            print("  -> Categories remises aux valeurs par defaut")
+
+        elif cmd == "a":
+            name = _ask("  Nom de la categorie", "", True)
+            if not name:
+                print("  Annule")
+                continue
+            max_str = _ask("  Max articles", "4", True)
+            try:
+                max_val = int(max_str)
+            except ValueError:
+                max_val = 4
+            categories.append({"name": name, "max": max_val})
+            print(f"  -> Ajoutee : {name} (max {max_val})")
+
+        elif cmd == "e":
+            if len(parts) < 2:
+                print("  Usage: e <numero>")
+                continue
+            try:
+                idx = int(parts[1]) - 1
+                if 0 <= idx < len(categories):
+                    cat = categories[idx]
+                    new_name = _ask(f"  Nom", cat["name"], True)
+                    new_max = _ask(f"  Max articles", str(cat["max"]), True)
+                    cat["name"] = new_name
+                    try:
+                        cat["max"] = int(new_max)
+                    except ValueError:
+                        pass
+                    print(f"  -> Modifiee : {cat['name']} (max {cat['max']})")
+                else:
+                    print(f"  Numero hors plage (1-{len(categories)})")
+            except ValueError:
+                print("  Numero invalide")
+
+        elif cmd == "d":
+            if len(parts) < 2:
+                print("  Usage: d <numero>")
+                continue
+            try:
+                idx = int(parts[1]) - 1
+                if 0 <= idx < len(categories):
+                    removed = categories.pop(idx)
+                    print(f"  -> Supprimee : {removed['name']}")
+                else:
+                    print(f"  Numero hors plage (1-{len(categories)})")
+            except ValueError:
+                print("  Numero invalide")
+
+        else:
+            print("  Commandes : e <n>=editer, a=ajouter, d <n>=supprimer, r=reset, q=sauver")
+
+    # Save
+    user_cfg["scoring_profile"] = profile
+    user_cfg["categories"] = categories
+    _save_json(CONFIG_FILE, user_cfg)
+    print()
+    print(f"  Sauvegarde : profil + {len(categories)} categorie(s) -> {CONFIG_FILE}")
     print()
 
 
@@ -699,6 +869,8 @@ def main():
     parser = argparse.ArgumentParser(description="OpenClaw veille - setup wizard")
     parser.add_argument("--manage-sources", action="store_true",
                         help="Gestion interactive des sources RSS (activer/desactiver)")
+    parser.add_argument("--manage-categories", action="store_true",
+                        help="Gestion du profil de scoring et des categories de veille")
     parser.add_argument("--manage-outputs", action="store_true",
                         help="Gestion interactive des sorties (telegram, mail, nextcloud, file)")
     parser.add_argument("--setup-cron", action="store_true",
@@ -713,6 +885,8 @@ def main():
         cleanup()
     elif args.manage_sources:
         run_manage_sources()
+    elif args.manage_categories:
+        run_manage_categories()
     elif args.manage_outputs:
         run_manage_outputs()
     elif args.setup_cron:

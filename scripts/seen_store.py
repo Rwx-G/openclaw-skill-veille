@@ -18,6 +18,8 @@ Usage (import) :
 """
 
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -40,8 +42,20 @@ def _load(path: Path) -> dict:
 
 
 def _save(path: Path, data: dict):
+    """Atomic write: write to temp file then rename to prevent corruption."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    content = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _purge(data: dict, ttl_days: int) -> dict:

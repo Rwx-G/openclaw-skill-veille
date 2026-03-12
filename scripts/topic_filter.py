@@ -22,7 +22,9 @@ On ne filtre que les duplicates nets au-dessus de TOPIC_SIMILARITY_THRESHOLD.
 """
 
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -297,11 +299,20 @@ class TopicStore:
         self._data = {k: v for k, v in raw.items() if v.get("ts", "") >= cutoff}
 
     def _save(self):
+        """Atomic write: write to temp file then rename to prevent corruption."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self._data, indent=2, ensure_ascii=False, sort_keys=True),
-            encoding="utf-8",
-        )
+        content = json.dumps(self._data, indent=2, ensure_ascii=False, sort_keys=True)
+        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(tmp, str(self.path))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def mark_seen(self, articles: list):
         """

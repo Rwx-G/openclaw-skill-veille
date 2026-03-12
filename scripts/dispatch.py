@@ -25,12 +25,16 @@ Usage:
 
 import html
 import json
+import os
 import pathlib
+import re as _re
 import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+_SEP = os.sep
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -51,7 +55,9 @@ def _validate_skill_script(script_path: pathlib.Path, skill_name: str) -> bool:
     try:
         resolved = script_path.resolve()
         skills_resolved = _SKILLS_DIR.resolve()
-        if not str(resolved).startswith(str(skills_resolved)):
+        resolved_str = str(resolved)
+        skills_str = str(skills_resolved)
+        if resolved_str != skills_str and not resolved_str.startswith(skills_str + _SEP):
             print(f"[dispatch] BLOCKED: {skill_name} script path {resolved} "
                   f"is outside {skills_resolved}", file=sys.stderr)
             return False
@@ -84,6 +90,17 @@ _BLOCKED_CONTENT_PATTERNS = [
     "import os", "import subprocess",
 ]
 
+_BLOCKED_CONTENT_RE = _re.compile(
+    r"#\s*!.*(?:/bin/|/usr/bin/|python|bash|sh|perl)"  # shebang variants
+    r"|eval\s*\("                                       # eval with optional space
+    r"|exec\s*\("                                       # exec with optional space
+    r"|__import__\s*\("                                 # __import__ with optional space
+    r"|import\s+(?:os|subprocess|shutil|pty)"           # dangerous imports
+    r"|getattr\s*\(\s*__builtins__"                     # builtins access
+    r"|compile\s*\(",                                    # compile()
+    _re.IGNORECASE,
+)
+
 
 def _validate_output_path(file_path: str, config: dict) -> pathlib.Path | None:
     """Validate that a file output path is safe to write to."""
@@ -109,7 +126,9 @@ def _validate_output_path(file_path: str, config: dict) -> pathlib.Path | None:
             pass
 
     for allowed in allowed_dirs:
-        if str(p).startswith(str(allowed)):
+        a_str = str(allowed)
+        p_str_full = str(p)
+        if p_str_full == a_str or p_str_full.startswith(a_str + _SEP):
             return p
 
     print(f"[dispatch:file] BLOCKED: {p} is outside allowed directories "
@@ -131,6 +150,12 @@ def _validate_file_content(text: str) -> bool:
             print(f"[dispatch:file] BLOCKED: content contains suspicious "
                   f"pattern {pattern!r}", file=sys.stderr)
             return False
+
+    m = _BLOCKED_CONTENT_RE.search(text)
+    if m:
+        print(f"[dispatch:file] BLOCKED: content matches suspicious "
+              f"regex pattern {m.group()!r}", file=sys.stderr)
+        return False
 
     return True
 

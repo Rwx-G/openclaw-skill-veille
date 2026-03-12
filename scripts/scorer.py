@@ -88,9 +88,11 @@ _SECURITY_NOTICE = (
     "== END NOTICE ==\n\n"
 )
 
+_DEFAULT_PROFILE = "ingenieur sysops/DevOps Linux, securite defensive, infrastructure Linux, DevOps, auto-hebergement, vie privee"
+
 _SCORING_PROMPT_TEMPLATE = (
-    "Tu es un assistant de veille technologique pour un ingénieur sysops/DevOps.\n"
-    "Profil : sécurité défensive, infrastructure Linux, DevOps, auto-hébergement, vie privée.\n"
+    "Tu es un assistant de veille technologique.\n"
+    "Profil cible : {profile}\n"
     "Langue de réponse : français.\n\n"
     "Voici {count} articles publiés dans les dernières {hours}h :\n\n"
     "{articles_block}\n\n"
@@ -105,7 +107,7 @@ _SCORING_PROMPT_TEMPLATE = (
 )
 
 
-def _build_prompt(articles: list, hours: int, top_n: int) -> str:
+def _build_prompt(articles: list, hours: int, top_n: int, profile: str = "") -> str:
     """Build the scoring prompt with anti-injection wrappers.
 
     Only the first top_n articles (sorted by date desc from fetch) are sent
@@ -133,6 +135,7 @@ def _build_prompt(articles: list, hours: int, top_n: int) -> str:
         count=len(subset),
         hours=hours,
         articles_block=articles_block,
+        profile=profile or _DEFAULT_PROFILE,
     )
     return prompt
 
@@ -145,6 +148,9 @@ def _call_llm(prompt: str, llm_cfg: dict) -> list:
     """Call OpenAI-compatible API and return parsed scores list."""
     api_key = _read_api_key(llm_cfg)
     base_url = llm_cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
+    if not base_url.startswith("https://"):
+        print(f"[scorer] WARNING: base_url is not HTTPS ({base_url}) — "
+              f"API key will be sent in cleartext", file=sys.stderr)
     model = llm_cfg.get("model", "gpt-4o-mini")
 
     payload = json.dumps({
@@ -165,7 +171,14 @@ def _call_llm(prompt: str, llm_cfg: dict) -> list:
     with urllib.request.urlopen(req, timeout=30) as r:
         resp = json.loads(r.read())
 
-    raw = resp["choices"][0]["message"]["content"]
+    # Validate response structure
+    choices = resp.get("choices")
+    if not choices or not isinstance(choices, list):
+        raise ValueError(f"LLM API returned unexpected response (no choices): {str(resp)[:200]}")
+    message = choices[0].get("message", {})
+    raw = message.get("content", "")
+    if not raw:
+        raise ValueError("LLM API returned empty content")
 
     # Strip markdown code fences if present
     raw = raw.strip()
@@ -175,7 +188,10 @@ def _call_llm(prompt: str, llm_cfg: dict) -> list:
         lines = [l for l in lines if not l.strip().startswith("```")]
         raw = "\n".join(lines)
 
-    return json.loads(raw)
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        raise ValueError(f"LLM returned {type(parsed).__name__}, expected list")
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +231,10 @@ def score_articles(data: dict, cfg: dict) -> dict:
     top_n = llm_cfg.get("top_n", 10)
     hours = data.get("hours", 24)
     ghost_threshold = llm_cfg.get("ghost_threshold", 5)
+    profile = cfg.get("scoring_profile", _DEFAULT_PROFILE)
 
     try:
-        prompt = _build_prompt(articles, hours, top_n)
+        prompt = _build_prompt(articles, hours, top_n, profile=profile)
         scores = _call_llm(prompt, llm_cfg)
 
         # Build index -> score/reason mapping
